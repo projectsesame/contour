@@ -527,6 +527,46 @@ type Parameters struct {
 
 	// MetricsParameters holds configurable parameters for Contour and Envoy metrics.
 	Metrics MetricsParameters `yaml:"metrics,omitempty"`
+
+	// Tracing holds the relevant configuration for exporting trace data to OpenTelemetry.
+	Tracing Tracing `yaml:"tracing,omitempty"`
+}
+
+// Tracing defines properties for exporting trace data to OpenTelemetry.
+type Tracing struct {
+	// OverallSampling defines the sampling rate of trace data.
+	// the default value is 100
+	OverallSampling float64 `yaml:"overallSampling"`
+
+	// OverallSampling defines maximum length of the request path
+	// to extract and include in the HttpUrl tag.
+	// the default value is 256
+	MaxPathTagLength uint32 `yaml:"maxPathTagLength"`
+
+	// CustomTags defines a list of custom tags with unique tag name.
+	CustomTags []CustomTag `yaml:"customTags"`
+
+	// ExtensionService identifies the extension service defining the otle-collector,
+	// formatted as <namespace>/<name>.
+	ExtensionService string `yaml:"extensionService"`
+}
+
+// CustomTag defines custom tags with unique tag name
+// to create tags for the active span.
+type CustomTag struct {
+	// TagName is the unique name of the custom tag.
+	TagName string `yaml:"tagName"`
+
+	// Literal is a static custom tag value.
+	Literal string `yaml:"literal"`
+
+	// EnvironmentName indicates that the label value is obtained
+	// from the environment variable.
+	EnvironmentName string `yaml:"environment"`
+
+	// RequestHeaderName indicates which request header
+	// the label value is obtained from.
+	RequestHeaderName string `yaml:"requestHeaderName"`
 }
 
 // RateLimitService defines properties of a global Rate Limit Service.
@@ -588,6 +628,36 @@ func (p *MetricsParameters) Validate() error {
 		return fmt.Errorf("metrics.envoy: %v", err)
 	}
 
+	return nil
+}
+
+func (t *Tracing) Validate() error {
+	if t.OverallSampling == 0 && t.MaxPathTagLength == 0 && t.ExtensionService == "" && t.CustomTags == nil {
+		return nil
+	}
+
+	if t.ExtensionService == "" {
+		return errors.New("tracing.extensionService must be defined")
+	}
+
+	for _, customTag := range t.CustomTags {
+		var fieldCount int
+		if customTag.TagName == "" {
+			return errors.New("tracing.customTag.tagName must be defined")
+		}
+		if customTag.Literal != "" {
+			fieldCount++
+		}
+		if customTag.EnvironmentName != "" {
+			fieldCount++
+		}
+		if customTag.RequestHeaderName != "" {
+			fieldCount++
+		}
+		if fieldCount != 1 {
+			return errors.New("must set exactly one of Literal or EnvironmentName or RequestHeaderName")
+		}
+	}
 	return nil
 }
 
@@ -669,6 +739,10 @@ func (p *Parameters) Validate() error {
 	}
 
 	if err := p.Metrics.Validate(); err != nil {
+		return err
+	}
+
+	if err := p.Tracing.Validate(); err != nil {
 		return err
 	}
 

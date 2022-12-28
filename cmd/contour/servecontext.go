@@ -360,6 +360,29 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 		dnsLookupFamily = contour_api_v1alpha1.IPv4ClusterDNSFamily
 	}
 
+	var tracingConfig *contour_api_v1alpha1.TracingConfig
+	if ctx.Config.Tracing.ExtensionService != "" {
+		namespacedName := k8s.NamespacedNameFrom(ctx.Config.Tracing.ExtensionService)
+		var customTags []*contour_api_v1alpha1.CustomTag
+		for _, customTag := range ctx.Config.Tracing.CustomTags {
+			customTags = append(customTags, &contour_api_v1alpha1.CustomTag{
+				TagName:           customTag.TagName,
+				Literal:           customTag.Literal,
+				EnvironmentName:   customTag.EnvironmentName,
+				RequestHeaderName: customTag.RequestHeaderName,
+			})
+		}
+		tracingConfig = &contour_api_v1alpha1.TracingConfig{
+			OverallSampling:  pointer.Float64(ctx.Config.Tracing.OverallSampling),
+			MaxPathTagLength: pointer.Uint32(ctx.Config.Tracing.MaxPathTagLength),
+			CustomTags:       customTags,
+			ExtensionService: contour_api_v1alpha1.NamespacedName{
+				Name:      namespacedName.Name,
+				Namespace: namespacedName.Namespace,
+			},
+		}
+	}
+
 	var rateLimitService *contour_api_v1alpha1.RateLimitServiceConfig
 	if ctx.Config.RateLimitService.ExtensionService != "" {
 
@@ -480,6 +503,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 				XffNumTrustedHops: &ctx.Config.Network.XffNumTrustedHops,
 				EnvoyAdminPort:    &ctx.Config.Network.EnvoyAdminPort,
 			},
+			Tracing: tracingConfig,
 		},
 		Gateway: gatewayConfig,
 		HTTPProxy: &contour_api_v1alpha1.HTTPProxyConfig{

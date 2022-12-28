@@ -137,6 +137,8 @@ type ListenerConfig struct {
 	// RateLimitConfig optionally configures the global Rate Limit Service to be
 	// used.
 	RateLimitConfig *RateLimitConfig
+
+	TracingConfig *dag.TracingConfig
 }
 
 type RateLimitConfig struct {
@@ -257,6 +259,10 @@ func (lvc *ListenerConfig) newSecureAccessLog() []*envoy_accesslog_v3.AccessLog 
 	default:
 		return envoy_v3.FileAccessLogEnvoy(lvc.httpsAccessLog(), lvc.AccessLogFormatString, lvc.AccessLogFormatterExtensions, lvc.AccessLogLevel)
 	}
+}
+
+func (lvc *ListenerConfig) Tracing() *contour_api_v1alpha1.TracingConfig {
+	return nil
 }
 
 // minTLSVersion returns the requested minimum TLS protocol
@@ -389,6 +395,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
 					NumTrustedHops(cfg.XffNumTrustedHops).
+					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
 					Get()
 

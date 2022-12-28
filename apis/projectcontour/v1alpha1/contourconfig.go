@@ -293,6 +293,8 @@ type EnvoyConfig struct {
 	// Network holds various configurable Envoy network values.
 	// +optional
 	Network *NetworkParameters `json:"network,omitempty"`
+
+	Tracing *TracingConfig `json:"tracing,omitempty"`
 }
 
 // DebugConfig contains Contour specific troubleshooting options.
@@ -614,6 +616,48 @@ type RateLimitServiceConfig struct {
 	// ref. https://tools.ietf.org/id/draft-polli-ratelimit-headers-03.html
 	// +optional
 	EnableXRateLimitHeaders *bool `json:"enableXRateLimitHeaders,omitempty"`
+}
+
+// TracingConfig defines properties for exporting trace data to OpenTelemetry.
+type TracingConfig struct {
+	// OverallSampling defines the sampling rate of trace data.
+	// contour's default is 100
+	// +optional
+	OverallSampling *float64 `json:"overallSampling"`
+
+	// OverallSampling defines maximum length of the request path
+	// to extract and include in the HttpUrl tag.
+	// contour's default is 256
+	// +optional
+	MaxPathTagLength *uint32 `json:"maxPathTagLength"`
+
+	// CustomTags defines a list of custom tags with unique tag name.
+	// +optional
+	CustomTags []*CustomTag `json:"customTags"`
+
+	// ExtensionService identifies the extension service defining the otle-collector.
+	ExtensionService NamespacedName `json:"extensionService"`
+}
+
+// CustomTag defines custom tags with unique tag name
+// to create tags for the active span.
+type CustomTag struct {
+	// TagName is the unique name of the custom tag.
+	TagName string `json:"tagName"`
+
+	// Literal is a static custom tag value.
+	// +optional
+	Literal string `json:"literal"`
+
+	// EnvironmentName indicates that the label value is obtained
+	// from the environment variable.
+	// +optional
+	EnvironmentName string `json:"environment"`
+
+	// RequestHeaderName indicates which request header
+	// the label value is obtained from.
+	// +optional
+	RequestHeaderName string `json:"requestHeaderName"`
 }
 
 // PolicyConfig holds default policy used if not explicitly set by the user

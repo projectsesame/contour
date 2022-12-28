@@ -163,6 +163,7 @@ type httpConnectionManagerBuilder struct {
 	mergeSlashes                  bool
 	forwardClientCertificate      *dag.ClientCertificateDetails
 	numTrustedHops                uint32
+	tracingConfig                 *http.HttpConnectionManager_Tracing
 }
 
 // RouteConfigName sets the name of the RDS element that contains
@@ -386,6 +387,14 @@ func (b *httpConnectionManagerBuilder) AddFilter(f *http.HttpFilter) *httpConnec
 	return b
 }
 
+func (b *httpConnectionManagerBuilder) Tracing(tracing *http.HttpConnectionManager_Tracing) *httpConnectionManagerBuilder {
+	if tracing == nil {
+		return b
+	}
+	b.tracingConfig = tracing
+	return b
+}
+
 // Validate runs builtin validation rules against the current builder state.
 func (b *httpConnectionManagerBuilder) Validate() error {
 
@@ -427,6 +436,7 @@ func (b *httpConnectionManagerBuilder) Get() *envoy_listener_v3.Filter {
 				ConfigSource:    ConfigSource("contour"),
 			},
 		},
+		Tracing:     b.tracingConfig,
 		HttpFilters: b.filters,
 		CommonHttpProtocolOptions: &envoy_core_v3.HttpProtocolOptions{
 			IdleTimeout: envoy.Timeout(b.connectionIdleTimeout),
