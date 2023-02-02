@@ -105,13 +105,6 @@ func TestDaemonSetConfigChanged(t *testing.T) {
 			description: "if probe values are set to default values",
 			mutate: func(ds *appsv1.DaemonSet) {
 				for i, c := range ds.Spec.Template.Spec.Containers {
-					if c.Name == dataplane.ShutdownContainerName {
-						ds.Spec.Template.Spec.Containers[i].LivenessProbe.ProbeHandler.HTTPGet.Scheme = "HTTP"
-						ds.Spec.Template.Spec.Containers[i].LivenessProbe.TimeoutSeconds = int32(1)
-						ds.Spec.Template.Spec.Containers[i].LivenessProbe.PeriodSeconds = int32(10)
-						ds.Spec.Template.Spec.Containers[i].LivenessProbe.SuccessThreshold = int32(1)
-						ds.Spec.Template.Spec.Containers[i].LivenessProbe.FailureThreshold = int32(3)
-					}
 					if c.Name == dataplane.EnvoyContainerName {
 						ds.Spec.Template.Spec.Containers[i].ReadinessProbe.TimeoutSeconds = int32(1)
 						// ReadinessProbe InitialDelaySeconds and PeriodSeconds are not set as defaults,
@@ -475,28 +468,16 @@ func TestLoadBalancerServiceChanged(t *testing.T) {
 			cntr.Spec.NetworkPublishing.Envoy.LoadBalancer.ProviderParameters.Type = model.GCPLoadBalancerProvider
 			cntr.Spec.NetworkPublishing.Envoy.LoadBalancer.ProviderParameters.GCP.Address = &loadBalancerIP
 		}
-		cntr.Spec.NetworkPublishing.Envoy.ServicePorts = []model.ServicePort{
+		cntr.Spec.NetworkPublishing.Envoy.Ports = []model.Port{
 			{
-				Name:       "http",
-				PortNumber: service.EnvoyServiceHTTPPort,
+				Name:          "http",
+				ServicePort:   service.EnvoyServiceHTTPPort,
+				ContainerPort: service.EnvoyServiceHTTPPort,
 			},
 			{
-				Name:       "https",
-				PortNumber: service.EnvoyServiceHTTPPort,
-			},
-		}
-		cntr.Spec.NetworkPublishing.Envoy.ContainerPorts = []model.ContainerPort{
-			{
-				Name:       "http",
-				PortNumber: service.EnvoyServiceHTTPPort,
-			},
-			{
-				Name:       "https",
-				PortNumber: service.EnvoyServiceHTTPPort,
-			},
-			{
-				Name:       "https",
-				PortNumber: service.EnvoyServiceHTTPSPort,
+				Name:          "https",
+				ServicePort:   service.EnvoyServiceHTTPSPort,
+				ContainerPort: service.EnvoyServiceHTTPSPort,
 			},
 		}
 		expected := service.DesiredEnvoyService(cntr)
@@ -542,18 +523,14 @@ func TestNodePortServiceChanged(t *testing.T) {
 
 	for _, tc := range testCases {
 		cntr.Spec.NetworkPublishing.Envoy.Type = model.NodePortServicePublishingType
-		cntr.Spec.NetworkPublishing.Envoy.ContainerPorts = []model.ContainerPort{
+		cntr.Spec.NetworkPublishing.Envoy.Ports = []model.Port{
 			{
-				Name:       "http",
-				PortNumber: service.EnvoyServiceHTTPPort,
+				Name:        "http",
+				ServicePort: service.EnvoyServiceHTTPPort,
 			},
 			{
-				Name:       "https",
-				PortNumber: service.EnvoyServiceHTTPSPort,
-			},
-			{
-				Name:       "https",
-				PortNumber: service.EnvoyServiceHTTPSPort,
+				Name:        "https",
+				ServicePort: service.EnvoyServiceHTTPSPort,
 			},
 		}
 		expected := service.DesiredEnvoyService(cntr)

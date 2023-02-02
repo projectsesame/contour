@@ -338,6 +338,18 @@ type EnvoyListenerConfig struct {
 	// +optional
 	DisableMergeSlashes *bool `json:"disableMergeSlashes,omitempty"`
 
+	// Defines the action to be applied to the Server header on the response path.
+	// When configured as overwrite, overwrites any Server header with "envoy".
+	// When configured as append_if_absent, if a Server header is present, pass it through, otherwise set it to "envoy".
+	// When configured as pass_through, pass through the value of the Server header, and do not append a header if none is present.
+	//
+	// Values: `overwrite` (default), `append_if_absent`, `pass_through`
+	//
+	// Other values will produce an error.
+	// Contour's default is overwrite.
+	// +optional
+	ServerHeaderTransformation ServerHeaderTransformationType `json:"serverHeaderTransformation,omitempty"`
+
 	// ConnectionBalancer. If the value is exact, the listener will use the exact connection balancer
 	// See https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto#envoy-api-msg-listener-connectionbalanceconfig
 	// for more information.
@@ -530,6 +542,23 @@ const (
 	IPv4ClusterDNSFamily ClusterDNSFamilyType = "v4"
 	// DNS lookups will only attempt v6 queries.
 	IPv6ClusterDNSFamily ClusterDNSFamilyType = "v6"
+	// DNS lookups will attempt both v4 and v6 queries.
+	AllClusterDNSFamily ClusterDNSFamilyType = "all"
+)
+
+// ServerHeaderTransformation defines the action to be applied to the Server header on the response path
+type ServerHeaderTransformationType string
+
+const (
+	// Overwrite any Server header with "envoy".
+	// This is the default value.
+	OverwriteServerHeader ServerHeaderTransformationType = "overwrite"
+	// If no Server header is present, set it to "envoy".
+	// If a Server header is present, pass it through.
+	AppendIfAbsentServerHeader ServerHeaderTransformationType = "append_if_absent"
+	// Pass through the value of the Server header, and do not append a header
+	// if none is present.
+	PassThroughServerHeader ServerHeaderTransformationType = "pass_through"
 )
 
 // ClusterParameters holds various configurable cluster values.
@@ -540,13 +569,16 @@ type ClusterParameters struct {
 	// will only perform a lookup for addresses in the IPv6 family.
 	// If AUTO is configured, the DNS resolver will first perform a lookup
 	// for addresses in the IPv6 family and fallback to a lookup for addresses
-	// in the IPv4 family.
+	// in the IPv4 family. If ALL is specified, the DNS resolver will perform a lookup for
+	// both IPv4 and IPv6 families, and return all resolved addresses.
+	// When this is used, Happy Eyeballs will be enabled for upstream connections.
+	// Refer to Happy Eyeballs Support for more information.
 	// Note: This only applies to externalName clusters.
 	//
 	// See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto.html#envoy-v3-api-enum-config-cluster-v3-cluster-dnslookupfamily
 	// for more information.
 	//
-	// Values: `auto` (default), `v4`, `v6`.
+	// Values: `auto` (default), `v4`, `v6`, `all`.
 	//
 	// Other values will produce an error.
 	// +optional
@@ -616,6 +648,12 @@ type RateLimitServiceConfig struct {
 	// ref. https://tools.ietf.org/id/draft-polli-ratelimit-headers-03.html
 	// +optional
 	EnableXRateLimitHeaders *bool `json:"enableXRateLimitHeaders,omitempty"`
+
+	// EnableResourceExhaustedCode enables translating error code 429 to
+	// grpc code RESOURCE_EXHAUSTED. When disabled it's translated to UNAVAILABLE
+	//
+	// +optional
+	EnableResourceExhaustedCode *bool `json:"enableResourceExhaustedCode,omitempty"`
 }
 
 // TracingConfig defines properties for exporting trace data to OpenTelemetry.

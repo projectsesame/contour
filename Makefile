@@ -6,7 +6,7 @@ IMAGE := $(REGISTRY)/$(PROJECT)
 SRCDIRS := ./cmd ./internal ./apis
 LOCAL_BOOTSTRAP_CONFIG = localenvoyconfig.yaml
 SECURE_LOCAL_BOOTSTRAP_CONFIG = securelocalenvoyconfig.yaml
-ENVOY_IMAGE = docker.io/envoyproxy/envoy:v1.24.1
+ENVOY_IMAGE = docker.io/envoyproxy/envoy:v1.25.0
 GATEWAY_API_VERSION ?= $(shell grep "sigs.k8s.io/gateway-api" go.mod | awk '{print $$2}')
 
 # Used to supply a local Envoy docker container an IP to connect to that is running
@@ -41,13 +41,19 @@ endif
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Base build image to use.
-BUILD_BASE_IMAGE ?= golang:1.19.3
+BUILD_BASE_IMAGE ?= golang:1.19.5
 
 # Enable build with CGO.
 BUILD_CGO_ENABLED ?= 0
 
+# Specify private modules.
+BUILD_GOPRIVATE ?= ""
+
 # Go module mirror to use.
 BUILD_GOPROXY ?= https://proxy.golang.org
+
+# Checksum db to use.
+BUILD_GOSUMDB ?= sum.golang.org
 
 BUILD_GOEXPERIMENT ?= none
 
@@ -119,7 +125,9 @@ multiarch-build: ## Build and optionally push a multi-arch Contour container ima
 	@mkdir -p $(shell pwd)/image
 	docker buildx build $(IMAGE_RESULT_FLAG) \
 		--platform $(IMAGE_PLATFORMS) \
+		--build-arg "BUILD_GOPRIVATE=$(BUILD_GOPRIVATE)" \
 		--build-arg "BUILD_GOPROXY=$(BUILD_GOPROXY)" \
+		--build-arg "BUILD_GOSUMDB=$(BUILD_GOSUMDB)" \
 		--build-arg "BUILD_BASE_IMAGE=$(BUILD_BASE_IMAGE)" \
 		--build-arg "BUILD_VERSION=$(BUILD_VERSION)" \
 		--build-arg "BUILD_BRANCH=$(BUILD_BRANCH)" \
@@ -133,7 +141,9 @@ multiarch-build: ## Build and optionally push a multi-arch Contour container ima
 
 container: ## Build the Contour container image
 	docker build \
+		--build-arg "BUILD_GOPRIVATE=$(BUILD_GOPRIVATE)" \
 		--build-arg "BUILD_GOPROXY=$(BUILD_GOPROXY)" \
+		--build-arg "BUILD_GOSUMDB=$(BUILD_GOSUMDB)" \
 		--build-arg "BUILD_BASE_IMAGE=$(BUILD_BASE_IMAGE)" \
 		--build-arg "BUILD_VERSION=$(BUILD_VERSION)" \
 		--build-arg "BUILD_BRANCH=$(BUILD_BRANCH)" \
@@ -255,7 +265,7 @@ generate-api-docs:
 .PHONY: generate-metrics-docs
 generate-metrics-docs:
 	@echo "Generating metrics documentation..."
-	@cd site/content/guides/metrics && rm -f *.md && go run ../../../../hack/generate-metrics-doc.go
+	@cd site/content/docs/main/guides/metrics && rm -f *.md && go run ../../../../../../hack/generate-metrics-doc.go
 
 .PHONY: generate-go
 generate-go:
@@ -306,7 +316,7 @@ e2e: | setup-kind-cluster load-contour-image-kind run-e2e cleanup-kind ## Run E2
 run-e2e:
 	CONTOUR_E2E_LOCAL_HOST=$(CONTOUR_E2E_LOCAL_HOST) \
 		CONTOUR_E2E_IMAGE=$(CONTOUR_E2E_IMAGE) \
-		ginkgo -tags=e2e -mod=readonly -skip-package=upgrade,bench -keep-going -randomize-suites -randomize-all -poll-progress-after=120s -r $(CONTOUR_E2E_PACKAGE_FOCUS)
+		go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -skip-package=upgrade,bench -keep-going -randomize-suites -randomize-all -poll-progress-after=120s -r $(CONTOUR_E2E_PACKAGE_FOCUS)
 
 .PHONY: cleanup-kind
 cleanup-kind:
@@ -330,7 +340,7 @@ upgrade: | install-contour-release load-contour-image-kind run-upgrade cleanup-k
 run-upgrade:
 	CONTOUR_UPGRADE_FROM_VERSION=$(CONTOUR_UPGRADE_FROM_VERSION) \
 		CONTOUR_E2E_IMAGE=$(CONTOUR_E2E_IMAGE) \
-		ginkgo -tags=e2e -mod=readonly -randomize-all -poll-progress-after=300s -v ./test/e2e/upgrade
+		go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -randomize-all -poll-progress-after=300s -v ./test/e2e/upgrade
 
 .PHONY: check-ingress-conformance
 check-ingress-conformance: | install-contour-working run-ingress-conformance cleanup-kind ## Run Ingress controller conformance
@@ -356,7 +366,7 @@ teardown-gcp-bench-cluster:
 
 .PHONY: run-bench
 run-bench:
-	ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=4h -timeout=5h -r -v ./test/e2e/bench
+	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=4h -timeout=5h -r -v ./test/e2e/bench
 
 .PHONY: bench
 bench: deploy-gcp-bench-cluster run-bench teardown-gcp-bench-cluster

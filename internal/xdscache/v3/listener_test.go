@@ -2616,6 +2616,7 @@ func TestListenerVisit(t *testing.T) {
 					},
 				},
 			},
+
 			want: listenermap(&envoy_listener_v3.Listener{
 				Name:    ENVOY_HTTP_LISTENER,
 				Address: envoy_v3.SocketAddress("0.0.0.0", 8080),
@@ -2626,6 +2627,61 @@ func TestListenerVisit(t *testing.T) {
 						AccessLoggers(envoy_v3.FileAccessLogEnvoy(DEFAULT_HTTP_ACCESS_LOG, "", nil, v1alpha1.LogLevelInfo)).
 						DefaultFilters().
 						MergeSlashes(true).
+						Get(),
+				),
+				SocketOptions: envoy_v3.TCPKeepaliveSocketOptions(),
+			}),
+		},
+		"httpproxy with server_header_transformation set to pass through in listener config": {
+			ListenerConfig: ListenerConfig{
+				ServerHeaderTransformation: v1alpha1.PassThroughServerHeader,
+			},
+			objs: []interface{}{
+				&contour_api_v1.HTTPProxy{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "simple",
+						Namespace: "default",
+					},
+					Spec: contour_api_v1.HTTPProxySpec{
+						VirtualHost: &contour_api_v1.VirtualHost{
+							Fqdn: "www.example.com",
+						},
+						Routes: []contour_api_v1.Route{{
+							Conditions: []contour_api_v1.MatchCondition{{
+								Prefix: "/",
+							}},
+							Services: []contour_api_v1.Service{{
+								Name: "backend",
+								Port: 80,
+							}},
+						}},
+					},
+				},
+				&v1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend",
+						Namespace: "default",
+					},
+					Spec: v1.ServiceSpec{
+						Ports: []v1.ServicePort{{
+							Name:     "http",
+							Protocol: "TCP",
+							Port:     80,
+						}},
+					},
+				},
+			},
+
+			want: listenermap(&envoy_listener_v3.Listener{
+				Name:    ENVOY_HTTP_LISTENER,
+				Address: envoy_v3.SocketAddress("0.0.0.0", 8080),
+				FilterChains: envoy_v3.FilterChains(
+					envoy_v3.HTTPConnectionManagerBuilder().
+						RouteConfigName(ENVOY_HTTP_LISTENER).
+						MetricsPrefix(ENVOY_HTTP_LISTENER).
+						AccessLoggers(envoy_v3.FileAccessLogEnvoy(DEFAULT_HTTP_ACCESS_LOG, "", nil, v1alpha1.LogLevelInfo)).
+						DefaultFilters().
+						ServerHeaderTransformation(v1alpha1.PassThroughServerHeader).
 						Get(),
 				),
 				SocketOptions: envoy_v3.TCPKeepaliveSocketOptions(),
@@ -3024,11 +3080,12 @@ func TestListenerVisit(t *testing.T) {
 		"insecure httpproxy with rate limit config": {
 			ListenerConfig: ListenerConfig{
 				RateLimitConfig: &RateLimitConfig{
-					ExtensionService:        types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
-					Domain:                  "contour",
-					Timeout:                 timeout.DurationSetting(7 * time.Second),
-					FailOpen:                false,
-					EnableXRateLimitHeaders: true,
+					ExtensionService:            types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
+					Domain:                      "contour",
+					Timeout:                     timeout.DurationSetting(7 * time.Second),
+					FailOpen:                    false,
+					EnableXRateLimitHeaders:     true,
+					EnableResourceExhaustedCode: true,
 				},
 			},
 			objs: []interface{}{
@@ -3092,7 +3149,8 @@ func TestListenerVisit(t *testing.T) {
 									},
 									TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 								},
-								EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+								EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+								RateLimitedAsResourceExhausted: true,
 							}),
 						},
 					}).Get()),
@@ -3102,12 +3160,13 @@ func TestListenerVisit(t *testing.T) {
 		"secure httpproxy with rate limit config": {
 			ListenerConfig: ListenerConfig{
 				RateLimitConfig: &RateLimitConfig{
-					ExtensionService:        types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
-					SNI:                     "ratelimit-example.com",
-					Domain:                  "contour",
-					Timeout:                 timeout.DurationSetting(7 * time.Second),
-					FailOpen:                false,
-					EnableXRateLimitHeaders: true,
+					ExtensionService:            types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
+					SNI:                         "ratelimit-example.com",
+					Domain:                      "contour",
+					Timeout:                     timeout.DurationSetting(7 * time.Second),
+					FailOpen:                    false,
+					EnableXRateLimitHeaders:     true,
+					EnableResourceExhaustedCode: true,
 				},
 			},
 			objs: []interface{}{
@@ -3179,7 +3238,8 @@ func TestListenerVisit(t *testing.T) {
 									},
 									TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 								},
-								EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+								EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+								RateLimitedAsResourceExhausted: true,
 							}),
 						},
 					}).
@@ -3218,7 +3278,8 @@ func TestListenerVisit(t *testing.T) {
 										},
 										TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 									},
-									EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									RateLimitedAsResourceExhausted: true,
 								}),
 							},
 						}).
@@ -3237,11 +3298,12 @@ func TestListenerVisit(t *testing.T) {
 			},
 			ListenerConfig: ListenerConfig{
 				RateLimitConfig: &RateLimitConfig{
-					ExtensionService:        types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
-					Domain:                  "contour",
-					Timeout:                 timeout.DurationSetting(7 * time.Second),
-					FailOpen:                false,
-					EnableXRateLimitHeaders: true,
+					ExtensionService:            types.NamespacedName{Namespace: "projectcontour", Name: "ratelimit"},
+					Domain:                      "contour",
+					Timeout:                     timeout.DurationSetting(7 * time.Second),
+					FailOpen:                    false,
+					EnableXRateLimitHeaders:     true,
+					EnableResourceExhaustedCode: true,
 				},
 			},
 			objs: []interface{}{
@@ -3326,7 +3388,8 @@ func TestListenerVisit(t *testing.T) {
 										},
 										TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 									},
-									EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									RateLimitedAsResourceExhausted: true,
 								}),
 							},
 						}).
@@ -3365,7 +3428,8 @@ func TestListenerVisit(t *testing.T) {
 										},
 										TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 									},
-									EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									RateLimitedAsResourceExhausted: true,
 								}),
 							},
 						}).
@@ -3399,7 +3463,8 @@ func TestListenerVisit(t *testing.T) {
 										},
 										TransportApiVersion: envoy_core_v3.ApiVersion_V3,
 									},
-									EnableXRatelimitHeaders: ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									EnableXRatelimitHeaders:        ratelimit_filter_v3.RateLimit_DRAFT_VERSION_03,
+									RateLimitedAsResourceExhausted: true,
 								}),
 							},
 						}).

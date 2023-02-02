@@ -41,6 +41,7 @@ import (
 	envoy_tls_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	envoy_type "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/dag"
 	"github.com/projectcontour/contour/internal/envoy"
 	"github.com/projectcontour/contour/internal/protobuf"
@@ -161,6 +162,7 @@ type httpConnectionManagerBuilder struct {
 	codec                         HTTPVersionType // Note the zero value is AUTO, which is the default we want.
 	allowChunkedLength            bool
 	mergeSlashes                  bool
+	serverHeaderTransformation    http.HttpConnectionManager_ServerHeaderTransformation
 	forwardClientCertificate      *dag.ClientCertificateDetails
 	numTrustedHops                uint32
 	tracingConfig                 *http.HttpConnectionManager_Tracing
@@ -239,6 +241,18 @@ func (b *httpConnectionManagerBuilder) AllowChunkedLength(enabled bool) *httpCon
 // MergeSlashes toggles Envoy's non-standard merge_slashes path transformation option on the connection manager.
 func (b *httpConnectionManagerBuilder) MergeSlashes(enabled bool) *httpConnectionManagerBuilder {
 	b.mergeSlashes = enabled
+	return b
+}
+
+func (b *httpConnectionManagerBuilder) ServerHeaderTransformation(value contour_api_v1alpha1.ServerHeaderTransformationType) *httpConnectionManagerBuilder {
+	switch value {
+	case contour_api_v1alpha1.OverwriteServerHeader:
+		b.serverHeaderTransformation = http.HttpConnectionManager_OVERWRITE
+	case contour_api_v1alpha1.AppendIfAbsentServerHeader:
+		b.serverHeaderTransformation = http.HttpConnectionManager_APPEND_IF_ABSENT
+	case contour_api_v1alpha1.PassThroughServerHeader:
+		b.serverHeaderTransformation = http.HttpConnectionManager_PASS_THROUGH
+	}
 	return b
 }
 
@@ -369,19 +383,20 @@ func (b *httpConnectionManagerBuilder) AddFilter(f *http.HttpFilter) *httpConnec
 		}
 	}
 
-	// We can't add more than one router entry, and there should be no way to do it.
-	// If this happens, it has to be programmer error, so we panic to tell them
-	// it needs to be fixed. Note that in hitting this case, it doesn't matter we added
-	// the second one earlier, because we're panicking anyway.
-	if routerIndex != -1 && f.GetTypedConfig().MessageIs(&envoy_extensions_filters_http_router_v3.Router{}) {
-		panic("Can't add more than one router to a filter chain")
-	}
-
-	if routerIndex != lastIndex {
-		// Move the router to the end of the filters array.
-		routerFilter := b.filters[routerIndex]
-		b.filters = append(b.filters[:routerIndex], b.filters[routerIndex+1])
-		b.filters = append(b.filters, routerFilter)
+	if routerIndex != -1 {
+		// We can't add more than one router entry, and there should be no way to do it.
+		// If this happens, it has to be programmer error, so we panic to tell them
+		// it needs to be fixed. Note that in hitting this case, it doesn't matter we added
+		// the second one earlier, because we're panicking anyway.
+		if f.GetTypedConfig().MessageIs(&envoy_extensions_filters_http_router_v3.Router{}) {
+			panic("Can't add more than one router to a filter chain")
+		}
+		if routerIndex != lastIndex {
+			// Move the router to the end of the filters array.
+			routerFilter := b.filters[routerIndex]
+			b.filters = append(b.filters[:routerIndex], b.filters[routerIndex+1])
+			b.filters = append(b.filters, routerFilter)
+		}
 	}
 
 	return b
@@ -462,8 +477,9 @@ func (b *httpConnectionManagerBuilder) Get() *envoy_listener_v3.Filter {
 		},
 
 		// issue #1487 pass through X-Request-Id if provided.
-		PreserveExternalRequestId: true,
-		MergeSlashes:              b.mergeSlashes,
+		PreserveExternalRequestId:  true,
+		MergeSlashes:               b.mergeSlashes,
+		ServerHeaderTransformation: b.serverHeaderTransformation,
 
 		RequestTimeout:      envoy.Timeout(b.requestTimeout),
 		StreamIdleTimeout:   envoy.Timeout(b.streamIdleTimeout),

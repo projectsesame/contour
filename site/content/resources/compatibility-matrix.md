@@ -10,12 +10,16 @@ These combinations of versions are specifically tested in CI and supported by th
 
 | Contour Version | Envoy Version        | Kubernetes Versions | Operator Version | Gateway API Version |
 | --------------- | :------------------- | ------------------- | ---------------- | --------------------|
-| main            | [1.24.1][24]         | 1.25, 1.24, 1.23    | [main][50]       | v1alpha2, v1beta1   |
+| main            | [1.25.0][25]         | 1.26, 1.25, 1.24    | [main][50]       | v1alpha2, v1beta1   |
+| 1.24.0          | [1.25.0][25]         | 1.26, 1.25, 1.24    | [1.24.0][75]     | v1alpha2, v1beta1   |
+| 1.23.2          | [1.24.1][24]         | 1.25, 1.24, 1.23    | N/A              | v1alpha2, v1beta1   |
 | 1.23.1          | [1.24.1][24]         | 1.25, 1.24, 1.23    | N/A              | v1alpha2, v1beta1   |
 | 1.23.0          | [1.24.0][21]         | 1.25, 1.24, 1.23    | [1.23.0][74]     | v1alpha2, v1beta1   |
+| 1.22.3          | [1.23.3][23]         | 1.24, 1.23, 1.22    | N/A              | v1alpha2, v1beta1   |
 | 1.22.2          | [1.23.3][23]         | 1.24, 1.23, 1.22    | N/A              | v1alpha2, v1beta1   |
 | 1.22.1          | [1.23.1][20]         | 1.24, 1.23, 1.22    | [1.22.1][73]     | v1alpha2, v1beta1   |
 | 1.22.0          | [1.23.0][19]         | 1.24, 1.23, 1.22    | [1.22.0][72]     | v1alpha2, v1beta1   |
+| 1.21.3          | [1.22.6][22]         | 1.23, 1.22, 1.21    | N/A              | v1alpha2            |
 | 1.21.2          | [1.22.6][22]         | 1.23, 1.22, 1.21    | N/A              | v1alpha2            |
 | 1.21.1          | [1.22.2][17]         | 1.23, 1.22, 1.21    | [1.21.1][70]     | v1alpha2            |
 | 1.21.0          | [1.22.0][16]         | 1.23, 1.22, 1.21    | [1.21.0][69]     | v1alpha2            |
@@ -129,6 +133,7 @@ __Note:__ This list of extensions was last verified to be complete with Envoy v1
 [22]: https://www.envoyproxy.io/docs/envoy/v1.22.6/version_history/current
 [23]: https://www.envoyproxy.io/docs/envoy/v1.23.3/version_history/v1.23/v1.23.3
 [24]: https://www.envoyproxy.io/docs/envoy/v1.24.1/version_history/v1.24/v1.24.1
+[25]: https://www.envoyproxy.io/docs/envoy/v1.25.0/version_history/v1.25/v1.25.0
 
 [50]: https://github.com/projectcontour/contour-operator
 [51]: https://github.com/projectcontour/contour-operator/releases/tag/v1.11.0
@@ -155,6 +160,7 @@ __Note:__ This list of extensions was last verified to be complete with Envoy v1
 [72]: https://github.com/projectcontour/contour-operator/releases/tag/v1.22.0
 [73]: https://github.com/projectcontour/contour-operator/releases/tag/v1.22.1
 [74]: https://github.com/projectcontour/contour-operator/releases/tag/v1.23.0
+[75]: https://github.com/projectcontour/contour-operator/releases/tag/v1.24.0
 
 [98]: https://github.com/kubernetes/client-go
 [99]: https://github.com/kubernetes/client-go#compatibility-matrix

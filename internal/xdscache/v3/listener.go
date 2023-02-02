@@ -125,6 +125,9 @@ type ListenerConfig struct {
 	// MergeSlashes toggles Envoy's non-standard merge_slashes path transformation option for all listeners.
 	MergeSlashes bool
 
+	// ServerHeaderTransformation defines the action to be applied to the Server header on the response path.
+	ServerHeaderTransformation contour_api_v1alpha1.ServerHeaderTransformationType
+
 	// XffNumTrustedHops sets the number of additional ingress proxy hops from the
 	// right side of the x-forwarded-for HTTP header to trust.
 	XffNumTrustedHops uint32
@@ -144,12 +147,13 @@ type ListenerConfig struct {
 }
 
 type RateLimitConfig struct {
-	ExtensionService        types.NamespacedName
-	SNI                     string
-	Domain                  string
-	Timeout                 timeout.Setting
-	FailOpen                bool
-	EnableXRateLimitHeaders bool
+	ExtensionService            types.NamespacedName
+	SNI                         string
+	Domain                      string
+	Timeout                     timeout.Setting
+	FailOpen                    bool
+	EnableXRateLimitHeaders     bool
+	EnableResourceExhaustedCode bool
 }
 
 // DefaultListeners returns the configured Listeners or a single
@@ -396,6 +400,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					ConnectionShutdownGracePeriod(cfg.Timeouts.ConnectionShutdownGracePeriod).
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
+					ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 					NumTrustedHops(cfg.XffNumTrustedHops).
 					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
@@ -457,6 +462,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					ConnectionShutdownGracePeriod(cfg.Timeouts.ConnectionShutdownGracePeriod).
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
+					ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 					NumTrustedHops(cfg.XffNumTrustedHops).
 					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
@@ -524,6 +530,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					ConnectionShutdownGracePeriod(cfg.Timeouts.ConnectionShutdownGracePeriod).
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
+					ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 					NumTrustedHops(cfg.XffNumTrustedHops).
 					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
@@ -569,12 +576,13 @@ func envoyGlobalRateLimitConfig(config *RateLimitConfig) *envoy_v3.GlobalRateLim
 	}
 
 	return &envoy_v3.GlobalRateLimitConfig{
-		ExtensionService:        config.ExtensionService,
-		SNI:                     config.SNI,
-		FailOpen:                config.FailOpen,
-		Timeout:                 config.Timeout,
-		Domain:                  config.Domain,
-		EnableXRateLimitHeaders: config.EnableXRateLimitHeaders,
+		ExtensionService:            config.ExtensionService,
+		SNI:                         config.SNI,
+		FailOpen:                    config.FailOpen,
+		Timeout:                     config.Timeout,
+		Domain:                      config.Domain,
+		EnableXRateLimitHeaders:     config.EnableXRateLimitHeaders,
+		EnableResourceExhaustedCode: config.EnableResourceExhaustedCode,
 	}
 }
 

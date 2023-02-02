@@ -26,7 +26,7 @@ readonly KUBECTL=${KUBECTL:-kubectl}
 
 readonly MULTINODE_CLUSTER=${MULTINODE_CLUSTER:-"false"}
 readonly IPV6_CLUSTER=${IPV6_CLUSTER:-"false"}
-readonly NODEIMAGE=${NODEIMAGE:-"docker.io/kindest/node:v1.25.3@sha256:f52781bc0d7a19fb6c405c2af83abfeb311f130707a0e219175677e366cc45d1"}
+readonly NODEIMAGE=${NODEIMAGE:-"docker.io/kindest/node:v1.26.0@sha256:691e24bd2417609db7e589e1a479b902d2e209892a10ce375fab60a8407c7352"}
 readonly CLUSTERNAME=${CLUSTERNAME:-contour-e2e}
 readonly WAITTIME=${WAITTIME:-5m}
 
@@ -127,7 +127,7 @@ fi
 
 
 # Install cert-manager.
-${KUBECTL} apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.10.1/cert-manager.yaml
+${KUBECTL} apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.yaml
 ${KUBECTL} wait --timeout="${WAITTIME}" -n cert-manager -l app=cert-manager deployments --for=condition=Available
 ${KUBECTL} wait --timeout="${WAITTIME}" -n cert-manager -l app=webhook deployments --for=condition=Available
 

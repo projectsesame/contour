@@ -30,7 +30,6 @@ import (
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/status"
 	"github.com/projectcontour/contour/internal/timeout"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -76,7 +75,10 @@ type HTTPProxyProcessor struct {
 	// will only perform a lookup for addresses in the IPv6 family.
 	// If AUTO is configured, the DNS resolver will first perform a lookup
 	// for addresses in the IPv6 family and fallback to a lookup for addresses
-	// in the IPv4 family.
+	// in the IPv4 family. If ALL is specified, the DNS resolver will perform a lookup for
+	// both IPv4 and IPv6 families, and return all resolved addresses.
+	// When this is used, Happy Eyeballs will be enabled for upstream connections.
+	// Refer to Happy Eyeballs Support for more information.
 	// Note: This only applies to externalName clusters.
 	DNSLookupFamily contour_api_v1alpha1.ClusterDNSFamilyType
 
@@ -463,13 +465,13 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				// default to to the Contour-wide setting.
 				dnsLookupFamily := ""
 				switch jwtProvider.RemoteJWKS.DNSLookupFamily {
-				case "auto", "v4", "v6":
+				case "auto", "v4", "v6", "all":
 					dnsLookupFamily = jwtProvider.RemoteJWKS.DNSLookupFamily
 				case "":
 					dnsLookupFamily = string(p.DNSLookupFamily)
 				default:
 					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSDNSLookupFamilyInvalid",
-						"Spec.VirtualHost.JWTProviders.RemoteJWKS.DNSLookupFamily has an invalid value %q, must be auto, v4 or v6", jwtProvider.RemoteJWKS.DNSLookupFamily)
+						"Spec.VirtualHost.JWTProviders.RemoteJWKS.DNSLookupFamily has an invalid value %q, must be auto, all, v4 or v6", jwtProvider.RemoteJWKS.DNSLookupFamily)
 					return
 				}
 
@@ -614,14 +616,8 @@ func (p *HTTPProxyProcessor) computeRoutes(
 	visited = append(visited, proxy)
 	var routes []*Route
 
-	// Check for duplicate conditions on the includes
-	if includeMatchConditionsIdentical(proxy.Spec.Includes) {
-		validCond.AddError(contour_api_v1.ConditionTypeIncludeError, "DuplicateMatchConditions",
-			"duplicate conditions defined on an include")
-		return nil
-	}
-
-	// Loop over and process all includes
+	// Loop over and process all includes, including checking for duplicate conditions.
+	seenConds := map[string][][]HeaderMatchCondition{}
 	for _, include := range proxy.Spec.Includes {
 		namespace := include.Namespace
 		if namespace == "" {
@@ -637,6 +633,13 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		if err := headerMatchConditionsValid(include.Conditions); err != nil {
 			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "HeaderMatchConditionsNotValid",
 				err.Error())
+			continue
+		}
+
+		// Check to see if we have any duplicate include conditions.
+		if includeMatchConditionsIdentical(include, seenConds) {
+			validCond.AddError(contour_api_v1.ConditionTypeIncludeError, "DuplicateMatchConditions",
+				"duplicate conditions defined on an include")
 			continue
 		}
 
@@ -803,16 +806,20 @@ func (p *HTTPProxyProcessor) computeRoutes(
 			// First, try to apply an exact prefix match.
 			for _, prefix := range route.GetPrefixReplacements() {
 				if len(prefix.Prefix) > 0 && routingPrefix == prefix.Prefix {
-					r.PrefixRewrite = prefix.Replacement
+					r.PathRewritePolicy = &PathRewritePolicy{
+						PrefixRewrite: prefix.Replacement,
+					}
 					break
 				}
 			}
 
 			// If there wasn't a match, we can apply the default replacement.
-			if len(r.PrefixRewrite) == 0 {
+			if r.PathRewritePolicy == nil {
 				for _, prefix := range route.GetPrefixReplacements() {
 					if len(prefix.Prefix) == 0 {
-						r.PrefixRewrite = prefix.Replacement
+						r.PathRewritePolicy = &PathRewritePolicy{
+							PrefixRewrite: prefix.Replacement,
+						}
 						break
 					}
 				}
@@ -1214,7 +1221,7 @@ func expandPrefixMatches(routes []*Route) []*Route {
 		switch len(routes) {
 		case 1:
 			// Don't modify if we are not doing a replacement.
-			if len(routes[0].PrefixRewrite) == 0 {
+			if routes[0].PathRewritePolicy == nil {
 				continue
 			}
 
@@ -1229,18 +1236,21 @@ func expandPrefixMatches(routes []*Route) []*Route {
 			newRoute := *routes[0]
 
 			// Now, make the original route handle '/foo' and the new route handle '/foo'.
-			routes[0].PrefixRewrite = strings.TrimRight(routes[0].PrefixRewrite, "/")
+			routes[0].PathRewritePolicy.PrefixRewrite = strings.TrimRight(routes[0].PathRewritePolicy.PrefixRewrite, "/")
 			routes[0].PathMatchCondition = &PrefixMatchCondition{Prefix: prefix}
 
-			newRoute.PrefixRewrite = routes[0].PrefixRewrite + "/"
+			// Replace the entire PathRewritePolicy since we didn't deep-copy the route.
+			newRoute.PathRewritePolicy = &PathRewritePolicy{
+				PrefixRewrite: routes[0].PathRewritePolicy.PrefixRewrite + "/",
+			}
 			newRoute.PathMatchCondition = &PrefixMatchCondition{Prefix: prefix + "/"}
 
 			// Since we trimmed trailing '/', it's possible that
 			// we made the replacement empty. There's no such
 			// thing as an empty rewrite; it's the same as
 			// rewriting to '/'.
-			if len(routes[0].PrefixRewrite) == 0 {
-				routes[0].PrefixRewrite = "/"
+			if len(routes[0].PathRewritePolicy.PrefixRewrite) == 0 {
+				routes[0].PathRewritePolicy.PrefixRewrite = "/"
 			}
 
 			expandedRoutes = append(expandedRoutes, &newRoute)
@@ -1380,19 +1390,64 @@ func toStringSlice(hvs []contour_api_v1.CORSHeaderValue) []string {
 	return s
 }
 
-func includeMatchConditionsIdentical(includes []contour_api_v1.Include) bool {
-	j := 0
-	for i := 1; i < len(includes); i++ {
-		// Now compare each include's set of conditions
-		for _, cA := range includes[i].Conditions {
-			for _, cB := range includes[j].Conditions {
-				if (cA.Prefix == cB.Prefix) && equality.Semantic.DeepEqual(cA.Header, cB.Header) {
-					return true
-				}
+func includeMatchConditionsIdentical(include contour_api_v1.Include, seenConds map[string][][]HeaderMatchCondition) bool {
+	pathPrefix := mergePathMatchConditions(include.Conditions).Prefix
+	includeHeaderConds := mergeHeaderMatchConditions(include.Conditions)
+
+	// Note: this is stop-gap that we intend to change.
+	// This means that an empty set of conditions or a lone path prefix match on "/"
+	// are not considered duplicates. Previously, validation of
+	// includes was implemented in such a way that users could be relying on this
+	// behavior to set up their include tree.
+	// It is unlikely that there is much usage of duplicate non-default include
+	// conditions, so we think this special case is safe.
+	if pathPrefix == "/" && len(includeHeaderConds) == 0 {
+		return false
+	}
+
+	sort.SliceStable(includeHeaderConds, func(i, j int) bool {
+		if includeHeaderConds[i].MatchType != includeHeaderConds[j].MatchType {
+			return includeHeaderConds[i].MatchType < includeHeaderConds[j].MatchType
+		}
+		if includeHeaderConds[i].Invert != includeHeaderConds[j].Invert {
+			return includeHeaderConds[i].Invert
+		}
+		if includeHeaderConds[i].Name != includeHeaderConds[j].Name {
+			return includeHeaderConds[i].Name < includeHeaderConds[j].Name
+		}
+		if includeHeaderConds[i].Value != includeHeaderConds[j].Value {
+			return includeHeaderConds[i].Value < includeHeaderConds[j].Value
+		}
+		return false
+	})
+
+	seenHeaderConds, pathSeen := seenConds[pathPrefix]
+	if !pathSeen {
+		seenConds[pathPrefix] = [][]HeaderMatchCondition{
+			includeHeaderConds,
+		}
+		return false
+	}
+
+	for _, headerConds := range seenHeaderConds {
+		if len(headerConds) != len(includeHeaderConds) {
+			seenConds[pathPrefix] = append(seenConds[pathPrefix], includeHeaderConds)
+			continue
+		}
+
+		headerCondsIdentical := true
+		for i := range headerConds {
+			if headerConds[i] != includeHeaderConds[i] {
+				seenConds[pathPrefix] = append(seenConds[pathPrefix], includeHeaderConds)
+				headerCondsIdentical = false
+				break
 			}
 		}
-		j++
+		if headerCondsIdentical {
+			return true
+		}
 	}
+
 	return false
 }
 
