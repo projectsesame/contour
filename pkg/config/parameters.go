@@ -566,41 +566,41 @@ type Parameters struct {
 type Tracing struct {
 	// ServiceName defines the name for the service
 	// contour's default is contour
-	ServiceName string
+	ServiceName string `yaml:"serviceName,omitempty"`
 
 	// OverallSampling defines the sampling rate of trace data.
 	// the default value is 100
-	OverallSampling float64 `yaml:"overallSampling"`
+	OverallSampling float64 `yaml:"overallSampling,omitempty"`
 
 	// OverallSampling defines maximum length of the request path
 	// to extract and include in the HttpUrl tag.
 	// the default value is 256
-	MaxPathTagLength uint32 `yaml:"maxPathTagLength"`
+	MaxPathTagLength uint32 `yaml:"maxPathTagLength,omitempty"`
 
 	// CustomTags defines a list of custom tags with unique tag name.
-	CustomTags []CustomTag `yaml:"customTags"`
+	CustomTags []CustomTag `yaml:"customTags,omitempty"`
 
 	// ExtensionService identifies the extension service defining the otle-collector,
 	// formatted as <namespace>/<name>.
-	ExtensionService string `yaml:"extensionService"`
+	ExtensionService string `yaml:"extensionService,omitempty"`
 }
 
 // CustomTag defines custom tags with unique tag name
 // to create tags for the active span.
 type CustomTag struct {
 	// TagName is the unique name of the custom tag.
-	TagName string `yaml:"tagName"`
+	TagName string `yaml:"tagName,omitempty"`
 
 	// Literal is a static custom tag value.
-	Literal string `yaml:"literal"`
+	Literal string `yaml:"literal,omitempty"`
 
 	// EnvironmentName indicates that the label value is obtained
 	// from the environment variable.
-	EnvironmentName string `yaml:"environment"`
+	EnvironmentName string `yaml:"environment,omitempty"`
 
 	// RequestHeaderName indicates which request header
 	// the label value is obtained from.
-	RequestHeaderName string `yaml:"requestHeaderName"`
+	RequestHeaderName string `yaml:"requestHeaderName,omitempty"`
 }
 
 // RateLimitService defines properties of a global Rate Limit Service.

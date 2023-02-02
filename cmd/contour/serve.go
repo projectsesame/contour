@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"net"
 	"net/http"
 	"os"
@@ -637,12 +638,17 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 		})
 	}
 
+	overallSampling, err := strconv.ParseFloat(*tracingConfig.OverallSampling, 64)
+	if err != nil || overallSampling == 0 {
+		overallSampling = 100.0
+	}
+
 	return &dag.TracingConfig{
 		ServiceName:      pointer.StringDeref(tracingConfig.ServiceName, "contour"),
 		ExtensionService: key,
 		SNI:              sni,
 		Timeout:          responseTimeout,
-		OverallSampling:  pointer.Float64Deref(tracingConfig.OverallSampling, 100),
+		OverallSampling:  overallSampling,
 		MaxPathTagLength: pointer.Uint32Deref(tracingConfig.MaxPathTagLength, 256),
 		CustomTags:       customTags,
 	}, nil
