@@ -16,6 +16,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"k8s.io/utils/pointer"
 	"net"
 	"os"
 	"path/filepath"
@@ -726,7 +727,7 @@ func TestConvertServeContext(t *testing.T) {
 			getContourConfiguration: func(cfg contour_api_v1alpha1.ContourConfigurationSpec) contour_api_v1alpha1.ContourConfigurationSpec {
 				cfg.Envoy.Tracing = &contour_api_v1alpha1.TracingConfig{
 					ServiceName:      pointer.String("contour"),
-					OverallSampling:  pointer.Float64(100),
+					OverallSampling:  pointer.String("100"),
 					MaxPathTagLength: pointer.Uint32(256),
 					CustomTags: []*contour_api_v1alpha1.CustomTag{
 						{
