@@ -138,6 +138,8 @@ type ListenerConfig struct {
 	// used.
 	RateLimitConfig *RateLimitConfig
 
+	// TracingConfig optionally configures the tracing collector Service to be
+	// used.
 	TracingConfig *dag.TracingConfig
 }
 
@@ -456,6 +458,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
 					NumTrustedHops(cfg.XffNumTrustedHops).
+					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
 					ForwardClientCertificate(forwardClientCertificate).
 					Get()
@@ -522,6 +525,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					AllowChunkedLength(cfg.AllowChunkedLength).
 					MergeSlashes(cfg.MergeSlashes).
 					NumTrustedHops(cfg.XffNumTrustedHops).
+					Tracing(envoy_v3.TracingConfig(cfg.TracingConfig)).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
 					ForwardClientCertificate(forwardClientCertificate).
 					Get()

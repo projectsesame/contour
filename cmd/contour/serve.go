@@ -355,6 +355,7 @@ func (s *Server) doServe() error {
 	if listenerConfig.TracingConfig, err = s.setupTracingService(contourConfiguration.Envoy.Tracing); err != nil {
 		return err
 	}
+
 	if listenerConfig.RateLimitConfig, err = s.setupRateLimitService(contourConfiguration); err != nil {
 		return err
 	}
@@ -592,7 +593,7 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 	// Using GetAPIReader() here because the manager's caches won't be started yet,
 	// so reads from the manager's client (which uses the caches for reads) will fail.
 	if err := s.mgr.GetAPIReader().Get(context.Background(), key, extensionSvc); err != nil {
-		return nil, fmt.Errorf("error getting rate limit extension service %s: %v", key, err)
+		return nil, fmt.Errorf("error getting tracing extension service %s: %v", key, err)
 	}
 	// get the response timeout from the ExtensionService
 	var responseTimeout timeout.Setting
@@ -601,7 +602,7 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 	if tp := extensionSvc.Spec.TimeoutPolicy; tp != nil {
 		responseTimeout, err = timeout.Parse(tp.Response)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing rate limit extension service %s response timeout: %v", key, err)
+			return nil, fmt.Errorf("error parsing tracing extension service %s response timeout: %v", key, err)
 		}
 	}
 
@@ -621,6 +622,7 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 	}
 
 	return &dag.TracingConfig{
+		ServiceName:      pointer.StringDeref(tracingConfig.ServiceName, "contour"),
 		ExtensionService: key,
 		SNI:              sni,
 		Timeout:          responseTimeout,
