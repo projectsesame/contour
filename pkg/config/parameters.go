@@ -678,11 +678,20 @@ func (t *Tracing) Validate() error {
 		return errors.New("tracing.extensionService must be defined")
 	}
 
+	var customTagNames []string
+
 	for _, customTag := range t.CustomTags {
 		var fieldCount int
 		if customTag.TagName == "" {
 			return errors.New("tracing.customTag.tagName must be defined")
 		}
+
+		for _, customTagName := range customTagNames {
+			if customTagName == customTag.TagName {
+				return fmt.Errorf("tagName %s is duplicate", customTagName)
+			}
+		}
+
 		if customTag.Literal != "" {
 			fieldCount++
 		}
@@ -695,6 +704,7 @@ func (t *Tracing) Validate() error {
 		if fieldCount != 1 {
 			return errors.New("must set exactly one of Literal or EnvironmentName or RequestHeaderName")
 		}
+		customTagNames = append(customTagNames, customTag.TagName)
 	}
 	return nil
 }
