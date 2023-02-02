@@ -17,12 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/utils/pointer"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"k8s.io/utils/pointer"
 
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"

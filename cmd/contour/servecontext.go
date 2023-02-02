@@ -19,11 +19,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"k8s.io/utils/pointer"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"k8s.io/utils/pointer"
 
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
