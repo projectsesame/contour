@@ -707,6 +707,7 @@ type SecureVirtualHost struct {
 
 type TracingConfig struct {
 	ExtensionService types.NamespacedName
+	ServiceName      string
 	SNI              string
 	Timeout          timeout.Setting
 	OverallSampling  float64

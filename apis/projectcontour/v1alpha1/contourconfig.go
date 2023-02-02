@@ -658,6 +658,10 @@ type RateLimitServiceConfig struct {
 
 // TracingConfig defines properties for exporting trace data to OpenTelemetry.
 type TracingConfig struct {
+	// ServiceName defines the name for the service
+	// contour's default is contour
+	ServiceName *string
+
 	// OverallSampling defines the sampling rate of trace data.
 	// contour's default is 100
 	// +optional

@@ -375,6 +375,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 			})
 		}
 		tracingConfig = &contour_api_v1alpha1.TracingConfig{
+			ServiceName:      pointer.String(ctx.Config.Tracing.ServiceName),
 			OverallSampling:  pointer.Float64(ctx.Config.Tracing.OverallSampling),
 			MaxPathTagLength: pointer.Uint32(ctx.Config.Tracing.MaxPathTagLength),
 			CustomTags:       customTags,

@@ -564,6 +564,10 @@ type Parameters struct {
 
 // Tracing defines properties for exporting trace data to OpenTelemetry.
 type Tracing struct {
+	// ServiceName defines the name for the service
+	// contour's default is contour
+	ServiceName string
+
 	// OverallSampling defines the sampling rate of trace data.
 	// the default value is 100
 	OverallSampling float64 `yaml:"overallSampling"`
@@ -827,6 +831,7 @@ func Defaults() Parameters {
 		Listener: ListenerParameters{
 			ConnectionBalancer: "",
 		},
+		Tracing: Tracing{},
 	}
 }
 
