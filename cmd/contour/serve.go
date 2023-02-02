@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/utils/pointer"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +24,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"k8s.io/utils/pointer"
+
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
