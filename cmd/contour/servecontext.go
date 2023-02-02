@@ -19,7 +19,9 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -376,7 +378,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 		}
 		tracingConfig = &contour_api_v1alpha1.TracingConfig{
 			ServiceName:      pointer.String(ctx.Config.Tracing.ServiceName),
-			OverallSampling:  pointer.Float64(ctx.Config.Tracing.OverallSampling),
+			OverallSampling:  pointer.String(strconv.FormatFloat(ctx.Config.Tracing.OverallSampling, 'f', 1, 64)),
 			MaxPathTagLength: pointer.Uint32(ctx.Config.Tracing.MaxPathTagLength),
 			CustomTags:       customTags,
 			ExtensionService: contour_api_v1alpha1.NamespacedName{

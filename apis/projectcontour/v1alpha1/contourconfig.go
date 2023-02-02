@@ -660,46 +660,46 @@ type RateLimitServiceConfig struct {
 type TracingConfig struct {
 	// ServiceName defines the name for the service
 	// contour's default is contour
-	ServiceName *string
+	ServiceName *string `json:"serviceName,omitempty"`
 
 	// OverallSampling defines the sampling rate of trace data.
 	// contour's default is 100
 	// +optional
-	OverallSampling *float64 `json:"overallSampling"`
+	OverallSampling *string `json:"overallSampling,omitempty"`
 
 	// OverallSampling defines maximum length of the request path
 	// to extract and include in the HttpUrl tag.
 	// contour's default is 256
 	// +optional
-	MaxPathTagLength *uint32 `json:"maxPathTagLength"`
+	MaxPathTagLength *uint32 `json:"maxPathTagLength,omitempty"`
 
 	// CustomTags defines a list of custom tags with unique tag name.
 	// +optional
-	CustomTags []*CustomTag `json:"customTags"`
+	CustomTags []*CustomTag `json:"customTags,omitempty"`
 
 	// ExtensionService identifies the extension service defining the otle-collector.
-	ExtensionService NamespacedName `json:"extensionService"`
+	ExtensionService NamespacedName `json:"extensionService,omitempty"`
 }
 
 // CustomTag defines custom tags with unique tag name
 // to create tags for the active span.
 type CustomTag struct {
 	// TagName is the unique name of the custom tag.
-	TagName string `json:"tagName"`
+	TagName string `json:"tagName,omitempty"`
 
 	// Literal is a static custom tag value.
 	// +optional
-	Literal string `json:"literal"`
+	Literal string `json:"literal,omitempty"`
 
 	// EnvironmentName indicates that the label value is obtained
 	// from the environment variable.
 	// +optional
-	EnvironmentName string `json:"environment"`
+	EnvironmentName string `json:"environment,omitempty"`
 
 	// RequestHeaderName indicates which request header
 	// the label value is obtained from.
 	// +optional
-	RequestHeaderName string `json:"requestHeaderName"`
+	RequestHeaderName string `json:"requestHeaderName,omitempty"`
 }
 
 // PolicyConfig holds default policy used if not explicitly set by the user
