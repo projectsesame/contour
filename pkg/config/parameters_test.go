@@ -14,6 +14,7 @@
 package config
 
 import (
+	"k8s.io/utils/pointer"
 	"os"
 	"strings"
 	"testing"
@@ -498,7 +499,7 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.NoError(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
+		IncludePodDetail: pointer.Bool(false),
 		ServiceName:      "contour",
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
@@ -508,7 +509,7 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.NoError(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
+		IncludePodDetail: pointer.Bool(false),
 		ServiceName:      "contour",
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
@@ -517,7 +518,7 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.Error(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
+		IncludePodDetail: pointer.Bool(false),
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
 		CustomTags:       nil,
@@ -526,7 +527,6 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.NoError(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
 		CustomTags: []CustomTag{
@@ -541,7 +541,6 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.Error(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
 		CustomTags: []CustomTag{
@@ -554,7 +553,7 @@ func TestTracingConfigValidation(t *testing.T) {
 	require.Error(t, trace.Validate())
 
 	trace = &Tracing{
-		IncludePodDetail: false,
+		IncludePodDetail: pointer.Bool(true),
 		OverallSampling:  100,
 		MaxPathTagLength: 256,
 		CustomTags: []CustomTag{

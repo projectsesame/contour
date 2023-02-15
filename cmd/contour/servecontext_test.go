@@ -16,7 +16,6 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"k8s.io/utils/pointer"
 	"net"
 	"os"
 	"path/filepath"
@@ -25,16 +24,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/projectcontour/contour/pkg/config"
-	"github.com/tsaarni/certyaml"
-
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/contourconfig"
 	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
 	"github.com/projectcontour/contour/internal/fixture"
 	"github.com/projectcontour/contour/internal/ref"
+	"github.com/projectcontour/contour/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/tsaarni/certyaml"
 	"google.golang.org/grpc"
+	"k8s.io/utils/pointer"
 )
 
 func TestServeContextProxyRootNamespaces(t *testing.T) {
