@@ -14,7 +14,6 @@
 package config
 
 import (
-	"k8s.io/utils/pointer"
 	"os"
 	"strings"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+	"k8s.io/utils/pointer"
 )
 
 func TestGetenvOr(t *testing.T) {
