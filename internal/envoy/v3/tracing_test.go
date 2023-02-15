@@ -17,18 +17,17 @@ import (
 	"testing"
 	"time"
 
-	envoy_config_trace_v3 "github.com/envoyproxy/go-control-plane/envoy/config/trace/v3"
-	envoy_trace_v3 "github.com/envoyproxy/go-control-plane/envoy/type/tracing/v3"
-	"google.golang.org/protobuf/types/known/durationpb"
-
 	envoy_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	envoy_config_trace_v3 "github.com/envoyproxy/go-control-plane/envoy/config/trace/v3"
 	http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	envoy_trace_v3 "github.com/envoyproxy/go-control-plane/envoy/type/tracing/v3"
 	envoy_type_v3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/projectcontour/contour/internal/dag"
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/protobuf"
 	"github.com/projectcontour/contour/internal/timeout"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -55,8 +54,8 @@ func TestTracingConfig(t *testing.T) {
 						Literal: "this is literal",
 					},
 					{
-						TagName:         "environmentName",
-						EnvironmentName: "HOST",
+						TagName:         "podName",
+						EnvironmentName: "HOSTNAME",
 					},
 					{
 						TagName:           "requestHeaderName",

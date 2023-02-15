@@ -8,6 +8,6 @@ The Contour configuration file and ContourConfiguration CRD will be extended wit
 - Custom service name, the default is `contour`.
 - Custom sampling rate, the default is `100`.
 - Custom the maximum length of the request path, the default is `256`.
-- Customize span tags from literal,environment variables and request headers.
+- Customize span tags from literal and request headers.
 
 [1]: https://opentelemetry.io/

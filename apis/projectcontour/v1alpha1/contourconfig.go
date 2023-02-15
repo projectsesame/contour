@@ -76,6 +76,9 @@ type ContourConfigurationSpec struct {
 	// Contour's default is { address: "0.0.0.0", port: 8000 }.
 	// +optional
 	Metrics *MetricsConfig `json:"metrics,omitempty"`
+
+	// Tracing defines properties for exporting trace data to OpenTelemetry.
+	Tracing *TracingConfig `json:"tracing,omitempty"`
 }
 
 // XDSServerType is the type of xDS server implementation.
@@ -293,8 +296,6 @@ type EnvoyConfig struct {
 	// Network holds various configurable Envoy network values.
 	// +optional
 	Network *NetworkParameters `json:"network,omitempty"`
-
-	Tracing *TracingConfig `json:"tracing,omitempty"`
 }
 
 // DebugConfig contains Contour specific troubleshooting options.
@@ -658,7 +659,13 @@ type RateLimitServiceConfig struct {
 
 // TracingConfig defines properties for exporting trace data to OpenTelemetry.
 type TracingConfig struct {
-	// ServiceName defines the name for the service
+	// IncludePodDetail defines a flag.
+	// If it is true, contour will add the pod name and namespace to the span of the trace.
+	// the default is true.
+	// +optional
+	IncludePodDetail *bool `json:"IncludePodDetail,omitempty"`
+
+	// ServiceName defines the name for the service.
 	// contour's default is contour
 	ServiceName *string `json:"serviceName,omitempty"`
 
@@ -669,7 +676,7 @@ type TracingConfig struct {
 
 	// OverallSampling defines maximum length of the request path
 	// to extract and include in the HttpUrl tag.
-	// contour's default is 256
+	// contour's default is 256.
 	// +optional
 	MaxPathTagLength *uint32 `json:"maxPathTagLength,omitempty"`
 
@@ -690,11 +697,6 @@ type CustomTag struct {
 	// Literal is a static custom tag value.
 	// +optional
 	Literal string `json:"literal,omitempty"`
-
-	// EnvironmentName indicates that the label value is obtained
-	// from the environment variable.
-	// +optional
-	EnvironmentName string `json:"environment,omitempty"`
 
 	// RequestHeaderName indicates which request header
 	// the label value is obtained from.

@@ -23,8 +23,6 @@ import (
 	"strconv"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
@@ -58,6 +56,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/pointer"
 	ctrl_cache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -369,7 +368,7 @@ func (s *Server) doServe() error {
 		ConnectionBalancer:           contourConfiguration.Envoy.Listener.ConnectionBalancer,
 	}
 
-	if listenerConfig.TracingConfig, err = s.setupTracingService(contourConfiguration.Envoy.Tracing); err != nil {
+	if listenerConfig.TracingConfig, err = s.setupTracingService(contourConfiguration.Tracing); err != nil {
 		return err
 	}
 
@@ -630,11 +629,21 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 	}
 
 	var customTags []*dag.CustomTag
+
+	if pointer.BoolDeref(tracingConfig.IncludePodDetail, true) {
+		customTags = append(customTags, &dag.CustomTag{
+			TagName:         "podName",
+			EnvironmentName: "HOSTNAME",
+		}, &dag.CustomTag{
+			TagName:         "podNamespaceName",
+			EnvironmentName: "CONTOUR_NAMESPACE",
+		})
+	}
+
 	for _, customTag := range tracingConfig.CustomTags {
 		customTags = append(customTags, &dag.CustomTag{
 			TagName:           customTag.TagName,
 			Literal:           customTag.Literal,
-			EnvironmentName:   customTag.EnvironmentName,
 			RequestHeaderName: customTag.RequestHeaderName,
 		})
 	}
