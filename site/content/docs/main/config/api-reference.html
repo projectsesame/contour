@@ -4670,6 +4670,20 @@ MetricsConfig
 <p>Contour&rsquo;s default is { address: &ldquo;0.0.0.0&rdquo;, port: 8000 }.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>tracing</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.TracingConfig">
+TracingConfig
+</a>
+</em>
+</td>
+<td>
+<p>Tracing defines properties for exporting trace data to OpenTelemetry.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5348,6 +5362,20 @@ MetricsConfig
 <p>Contour&rsquo;s default is { address: &ldquo;0.0.0.0&rdquo;, port: 8000 }.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>tracing</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.TracingConfig">
+TracingConfig
+</a>
+</em>
+</td>
+<td>
+<p>Tracing defines properties for exporting trace data to OpenTelemetry.</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.ContourConfigurationStatus">ContourConfigurationStatus
@@ -5658,20 +5686,6 @@ string
 <td>
 <em>(Optional)</em>
 <p>Literal is a static custom tag value.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>environment</code>
-<br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>EnvironmentName indicates that the label value is obtained
-from the environment variable.</p>
 </td>
 </tr>
 <tr>
@@ -6028,19 +6042,6 @@ NetworkParameters
 <td>
 <em>(Optional)</em>
 <p>Network holds various configurable Envoy network values.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>tracing</code>
-<br>
-<em>
-<a href="#projectcontour.io/v1alpha1.TracingConfig">
-TracingConfig
-</a>
-</em>
-</td>
-<td>
 </td>
 </tr>
 </tbody>
@@ -7932,7 +7933,7 @@ for more information.</p>
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#projectcontour.io/v1alpha1.EnvoyConfig">EnvoyConfig</a>)
+<a href="#projectcontour.io/v1alpha1.ContourConfigurationSpec">ContourConfigurationSpec</a>)
 </p>
 <p>
 <p>TracingConfig defines properties for exporting trace data to OpenTelemetry.</p>
@@ -7947,6 +7948,21 @@ for more information.</p>
 <tbody>
 <tr>
 <td style="white-space:nowrap">
+<code>IncludePodDetail</code>
+<br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IncludePodDetail defines a flag.
+If it is true, contour will add the pod name and namespace to the span of the trace.
+the default is true.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
 <code>serviceName</code>
 <br>
 <em>
@@ -7954,7 +7970,7 @@ string
 </em>
 </td>
 <td>
-<p>ServiceName defines the name for the service
+<p>ServiceName defines the name for the service.
 contour&rsquo;s default is contour</p>
 </td>
 </tr>
@@ -7984,7 +8000,7 @@ uint32
 <em>(Optional)</em>
 <p>OverallSampling defines maximum length of the request path
 to extract and include in the HttpUrl tag.
-contour&rsquo;s default is 256</p>
+contour&rsquo;s default is 256.</p>
 </td>
 </tr>
 <tr>

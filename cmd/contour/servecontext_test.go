@@ -703,6 +703,7 @@ func TestConvertServeContext(t *testing.T) {
 		"tracing config": {
 			getServeContext: func(ctx *serveContext) *serveContext {
 				ctx.Config.Tracing = config.Tracing{
+					IncludePodDetail: nil,
 					ServiceName:      "contour",
 					OverallSampling:  100,
 					MaxPathTagLength: 256,
@@ -710,10 +711,6 @@ func TestConvertServeContext(t *testing.T) {
 						{
 							TagName: "literal",
 							Literal: "this is literal",
-						},
-						{
-							TagName:         "env",
-							EnvironmentName: "HOST",
 						},
 						{
 							TagName:           "header",
@@ -725,18 +722,14 @@ func TestConvertServeContext(t *testing.T) {
 				return ctx
 			},
 			getContourConfiguration: func(cfg contour_api_v1alpha1.ContourConfigurationSpec) contour_api_v1alpha1.ContourConfigurationSpec {
-				cfg.Envoy.Tracing = &contour_api_v1alpha1.TracingConfig{
+				cfg.Tracing = &contour_api_v1alpha1.TracingConfig{
 					ServiceName:      pointer.String("contour"),
-					OverallSampling:  pointer.String("100"),
+					OverallSampling:  pointer.String("100.0"),
 					MaxPathTagLength: pointer.Uint32(256),
 					CustomTags: []*contour_api_v1alpha1.CustomTag{
 						{
 							TagName: "literal",
 							Literal: "this is literal",
-						},
-						{
-							TagName:         "env",
-							EnvironmentName: "HOST",
 						},
 						{
 							TagName:           "header",

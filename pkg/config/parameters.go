@@ -564,6 +564,11 @@ type Parameters struct {
 
 // Tracing defines properties for exporting trace data to OpenTelemetry.
 type Tracing struct {
+	// IncludePodDetail defines a flag.
+	// If it is true, contour will add the pod name and namespace to the span of the trace.
+	// the default is true.
+	IncludePodDetail *bool `yaml:"includePodDetail,omitempty"`
+
 	// ServiceName defines the name for the service
 	// contour's default is contour
 	ServiceName string `yaml:"serviceName,omitempty"`
@@ -593,10 +598,6 @@ type CustomTag struct {
 
 	// Literal is a static custom tag value.
 	Literal string `yaml:"literal,omitempty"`
-
-	// EnvironmentName indicates that the label value is obtained
-	// from the environment variable.
-	EnvironmentName string `yaml:"environment,omitempty"`
 
 	// RequestHeaderName indicates which request header
 	// the label value is obtained from.
@@ -670,6 +671,9 @@ func (p *MetricsParameters) Validate() error {
 }
 
 func (t *Tracing) Validate() error {
+	if t == nil {
+		return nil
+	}
 	if t.OverallSampling == 0 && t.MaxPathTagLength == 0 && t.ExtensionService == "" && t.CustomTags == nil {
 		return nil
 	}
@@ -695,14 +699,12 @@ func (t *Tracing) Validate() error {
 		if customTag.Literal != "" {
 			fieldCount++
 		}
-		if customTag.EnvironmentName != "" {
-			fieldCount++
-		}
+
 		if customTag.RequestHeaderName != "" {
 			fieldCount++
 		}
 		if fieldCount != 1 {
-			return errors.New("must set exactly one of Literal or EnvironmentName or RequestHeaderName")
+			return errors.New("must set exactly one of Literal or RequestHeaderName")
 		}
 		customTagNames = append(customTagNames, customTag.TagName)
 	}

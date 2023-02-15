@@ -369,7 +369,7 @@ func (s *Server) doServe() error {
 		ConnectionBalancer:           contourConfiguration.Envoy.Listener.ConnectionBalancer,
 	}
 
-	if listenerConfig.TracingConfig, err = s.setupTracingService(contourConfiguration.Envoy.Tracing); err != nil {
+	if listenerConfig.TracingConfig, err = s.setupTracingService(contourConfiguration.Tracing); err != nil {
 		return err
 	}
 
@@ -630,11 +630,21 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 	}
 
 	var customTags []*dag.CustomTag
+
+	if pointer.BoolDeref(tracingConfig.IncludePodDetail, true) {
+		customTags = append(customTags, &dag.CustomTag{
+			TagName:         "podName",
+			EnvironmentName: "HOSTNAME",
+		}, &dag.CustomTag{
+			TagName:         "podNamespaceName",
+			EnvironmentName: "CONTOUR_NAMESPACE",
+		})
+	}
+
 	for _, customTag := range tracingConfig.CustomTags {
 		customTags = append(customTags, &dag.CustomTag{
 			TagName:           customTag.TagName,
 			Literal:           customTag.Literal,
-			EnvironmentName:   customTag.EnvironmentName,
 			RequestHeaderName: customTag.RequestHeaderName,
 		})
 	}

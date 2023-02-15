@@ -702,17 +702,24 @@ type SecureVirtualHost struct {
 	// JWTProviders specify how to verify JWTs.
 	JWTProviders []JWTProvider
 
+	// Tracing defines custom tags and the service to send trace data
 	Tracing TracingConfig
 }
 
 type TracingConfig struct {
 	ExtensionService types.NamespacedName
-	ServiceName      string
-	SNI              string
-	Timeout          timeout.Setting
-	OverallSampling  float64
+
+	ServiceName string
+
+	SNI string
+
+	Timeout timeout.Setting
+
+	OverallSampling float64
+
 	MaxPathTagLength uint32
-	CustomTags       []*CustomTag
+
+	CustomTags []*CustomTag
 }
 
 type CustomTag struct {

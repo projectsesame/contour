@@ -492,3 +492,82 @@ func TestListenerValidation(t *testing.T) {
 	}
 	require.Error(t, l.Validate())
 }
+
+func TestTracingConfigValidation(t *testing.T) {
+	var trace *Tracing
+	require.NoError(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		ServiceName:      "contour",
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags:       nil,
+		ExtensionService: "projectcontour/otel-collector",
+	}
+	require.NoError(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		ServiceName:      "contour",
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags:       nil,
+	}
+	require.Error(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags:       nil,
+		ExtensionService: "projectcontour/otel-collector",
+	}
+	require.NoError(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags: []CustomTag{
+			{
+				TagName:           "first",
+				Literal:           "literal",
+				RequestHeaderName: ":path",
+			},
+		},
+		ExtensionService: "projectcontour/otel-collector",
+	}
+	require.Error(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags: []CustomTag{
+			{
+				Literal: "literal",
+			},
+		},
+		ExtensionService: "projectcontour/otel-collector",
+	}
+	require.Error(t, trace.Validate())
+
+	trace = &Tracing{
+		IncludePodDetail: false,
+		OverallSampling:  100,
+		MaxPathTagLength: 256,
+		CustomTags: []CustomTag{
+			{
+				TagName: "first",
+				Literal: "literal",
+			},
+			{
+				TagName:           "first",
+				RequestHeaderName: ":path",
+			},
+		},
+		ExtensionService: "projectcontour/otel-collector",
+	}
+	require.Error(t, trace.Validate())
+}

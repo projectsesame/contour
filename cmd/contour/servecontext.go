@@ -24,14 +24,13 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/ref"
 	xdscache_v3 "github.com/projectcontour/contour/internal/xdscache/v3"
 	"github.com/projectcontour/contour/pkg/config"
+	"k8s.io/utils/pointer"
 
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -373,11 +372,11 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 			customTags = append(customTags, &contour_api_v1alpha1.CustomTag{
 				TagName:           customTag.TagName,
 				Literal:           customTag.Literal,
-				EnvironmentName:   customTag.EnvironmentName,
 				RequestHeaderName: customTag.RequestHeaderName,
 			})
 		}
 		tracingConfig = &contour_api_v1alpha1.TracingConfig{
+			IncludePodDetail: ctx.Config.Tracing.IncludePodDetail,
 			ServiceName:      pointer.String(ctx.Config.Tracing.ServiceName),
 			OverallSampling:  pointer.String(strconv.FormatFloat(ctx.Config.Tracing.OverallSampling, 'f', 1, 64)),
 			MaxPathTagLength: pointer.Uint32(ctx.Config.Tracing.MaxPathTagLength),
@@ -521,7 +520,6 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 				XffNumTrustedHops: &ctx.Config.Network.XffNumTrustedHops,
 				EnvoyAdminPort:    &ctx.Config.Network.EnvoyAdminPort,
 			},
-			Tracing: tracingConfig,
 		},
 		Gateway: gatewayConfig,
 		HTTPProxy: &contour_api_v1alpha1.HTTPProxyConfig{
@@ -533,6 +531,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 		RateLimitService:          rateLimitService,
 		Policy:                    policy,
 		Metrics:                   &contourMetrics,
+		Tracing:                   tracingConfig,
 	}
 
 	xdsServerType := contour_api_v1alpha1.ContourServerType
