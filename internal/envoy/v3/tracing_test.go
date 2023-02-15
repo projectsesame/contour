@@ -78,10 +78,10 @@ func TestTracingConfig(t *testing.T) {
 						},
 					},
 					{
-						Tag: "environmentName",
+						Tag: "podName",
 						Type: &envoy_trace_v3.CustomTag_Environment_{
 							Environment: &envoy_trace_v3.CustomTag_Environment{
-								Name: "HOST",
+								Name: "HOSTNAME",
 							},
 						},
 					},
