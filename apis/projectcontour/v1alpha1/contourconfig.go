@@ -684,7 +684,7 @@ type TracingConfig struct {
 	// +optional
 	CustomTags []*CustomTag `json:"customTags,omitempty"`
 
-	// ExtensionService identifies the extension service defining the otle-collector.
+	// ExtensionService identifies the extension service defining the otel-collector.
 	ExtensionService NamespacedName `json:"extensionService,omitempty"`
 }
 

@@ -30,8 +30,6 @@ import (
 	"github.com/projectcontour/contour/internal/ref"
 	xdscache_v3 "github.com/projectcontour/contour/internal/xdscache/v3"
 	"github.com/projectcontour/contour/pkg/config"
-	"k8s.io/utils/pointer"
-
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -377,9 +375,9 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 		}
 		tracingConfig = &contour_api_v1alpha1.TracingConfig{
 			IncludePodDetail: ctx.Config.Tracing.IncludePodDetail,
-			ServiceName:      pointer.String(ctx.Config.Tracing.ServiceName),
-			OverallSampling:  pointer.String(strconv.FormatFloat(ctx.Config.Tracing.OverallSampling, 'f', 1, 64)),
-			MaxPathTagLength: pointer.Uint32(ctx.Config.Tracing.MaxPathTagLength),
+			ServiceName:      ref.To(ctx.Config.Tracing.ServiceName),
+			OverallSampling:  ref.To(strconv.FormatFloat(ctx.Config.Tracing.OverallSampling, 'f', 1, 64)),
+			MaxPathTagLength: ref.To(ctx.Config.Tracing.MaxPathTagLength),
 			CustomTags:       customTags,
 			ExtensionService: contour_api_v1alpha1.NamespacedName{
 				Name:      namespacedName.Name,
