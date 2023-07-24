@@ -84,6 +84,11 @@ type ContourConfigurationSpec struct {
 
 	// Tracing defines properties for exporting trace data to OpenTelemetry.
 	Tracing *TracingConfig `json:"tracing,omitempty"`
+
+	// GlobalOutlierDetection defines the configuration for outlier detection on all services.
+	// If defined, this will be used as the default for all services.
+	// +optional
+	GlobalOutlierDetection *contour_api_v1.OutlierDetection `json:"outlierDetection,omitempty"`
 }
 
 // XDSServerType is the type of xDS server implementation.
