@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,25 +25,6 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
-	networking_v1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
-	ctrl_cache "sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
-	controller_runtime_metrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	gatewayapi_v1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
-
-	controller_runtime_metrics_server "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
 	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/annotation"
@@ -64,10 +46,22 @@ import (
 	"github.com/projectcontour/contour/internal/xdscache"
 	xdscache_v3 "github.com/projectcontour/contour/internal/xdscache/v3"
 	"github.com/projectcontour/contour/pkg/config"
-)
-
-const (
-	initialDagBuildPollPeriod = 100 * time.Millisecond
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	networking_v1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	ctrl_cache "sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	controller_runtime_metrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	controller_runtime_metrics_server "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	gatewayapi_v1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 // registerServe registers the serve subcommand and flags
@@ -182,12 +176,11 @@ func registerServe(app *kingpin.Application) (*kingpin.CmdClause, *serveContext)
 }
 
 type Server struct {
-	log               logrus.FieldLogger
-	ctx               *serveContext
-	coreClient        *kubernetes.Clientset
-	mgr               manager.Manager
-	registry          *prometheus.Registry
-	handlerCacheSyncs []cache.InformerSynced
+	log        logrus.FieldLogger
+	ctx        *serveContext
+	coreClient *kubernetes.Clientset
+	mgr        manager.Manager
+	registry   *prometheus.Registry
 }
 
 // NewServer returns a Server object which contains the initial configuration
@@ -437,7 +430,6 @@ func (s *Server) doServe() error {
 		XffNumTrustedHops:             *contourConfiguration.Envoy.Network.XffNumTrustedHops,
 		ConnectionBalancer:            contourConfiguration.Envoy.Listener.ConnectionBalancer,
 		MaxRequestsPerConnection:      contourConfiguration.Envoy.Listener.MaxRequestsPerConnection,
-		HTTP2MaxConcurrentStreams:     contourConfiguration.Envoy.Listener.HTTP2MaxConcurrentStreams,
 		PerConnectionBufferLimitBytes: contourConfiguration.Envoy.Listener.PerConnectionBufferLimitBytes,
 		SocketOptions:                 contourConfiguration.Envoy.Listener.SocketOptions,
 	}
@@ -466,9 +458,7 @@ func (s *Server) doServe() error {
 		&xdscache_v3.RouteCache{},
 		&xdscache_v3.ClusterCache{},
 		endpointHandler,
-		xdscache_v3.NewRuntimeCache(xdscache_v3.ConfigurableRuntimeSettings{
-			MaxRequestsPerIOCycle: contourConfiguration.Envoy.Listener.MaxRequestsPerIOCycle,
-		}),
+		&xdscache_v3.RuntimeCache{},
 	}
 
 	// snapshotHandler is used to produce new snapshots when the internal state changes for any xDS resource.
@@ -547,16 +537,6 @@ func (s *Server) doServe() error {
 		contourMetrics,
 		dag.ComposeObservers(append(xdscache.ObserversOf(resources), snapshotHandler)...),
 	)
-
-	hasSynced := func() bool {
-		for _, syncFunc := range s.handlerCacheSyncs {
-			if !syncFunc() {
-				return false
-			}
-		}
-		return true
-	}
-
 	contourHandler := contour.NewEventHandler(contour.EventHandlerConfig{
 		Logger:          s.log.WithField("context", "contourEventHandler"),
 		HoldoffDelay:    100 * time.Millisecond,
@@ -564,7 +544,7 @@ func (s *Server) doServe() error {
 		Observer:        observer,
 		StatusUpdater:   sh.Writer(),
 		Builder:         builder,
-	}, hasSynced)
+	})
 
 	// Wrap contourHandler in an EventRecorder which tracks API server events.
 	eventHandler := &contour.EventRecorder{
@@ -588,7 +568,7 @@ func (s *Server) doServe() error {
 
 	// Inform on the remaining resources.
 	for name, r := range informerResources {
-		if err := s.informOnResource(r, eventHandler); err != nil {
+		if err := informOnResource(r, eventHandler, s.mgr.GetCache()); err != nil {
 			s.log.WithError(err).WithField("resource", name).Fatal("failed to create informer")
 		}
 	}
@@ -604,15 +584,15 @@ func (s *Server) doServe() error {
 		handler = k8s.NewNamespaceFilter(sets.List(secretNamespaces), eventHandler)
 	}
 
-	if err := s.informOnResource(&corev1.Secret{}, handler); err != nil {
+	if err := informOnResource(&corev1.Secret{}, handler, s.mgr.GetCache()); err != nil {
 		s.log.WithError(err).WithField("resource", "secrets").Fatal("failed to create informer")
 	}
 
 	// Inform on endpoints.
-	if err := s.informOnResource(&corev1.Endpoints{}, &contour.EventRecorder{
+	if err := informOnResource(&corev1.Endpoints{}, &contour.EventRecorder{
 		Next:    endpointHandler,
 		Counter: contourMetrics.EventHandlerOperations,
-	}); err != nil {
+	}, s.mgr.GetCache()); err != nil {
 		s.log.WithError(err).WithField("resource", "endpoints").Fatal("failed to create informer")
 	}
 
@@ -666,7 +646,7 @@ func (s *Server) doServe() error {
 			handler = k8s.NewNamespaceFilter([]string{contourConfiguration.Envoy.Service.Namespace}, handler)
 		}
 
-		if err := s.informOnResource(&corev1.Service{}, handler); err != nil {
+		if err := informOnResource(&corev1.Service{}, handler, s.mgr.GetCache()); err != nil {
 			s.log.WithError(err).WithField("resource", "services").Fatal("failed to create informer")
 		}
 
@@ -677,11 +657,11 @@ func (s *Server) doServe() error {
 
 	xdsServer := &xdsServer{
 		log:             s.log,
+		mgr:             s.mgr,
 		registry:        s.registry,
 		config:          *contourConfiguration.XDSServer,
 		snapshotHandler: snapshotHandler,
 		resources:       resources,
-		initialDagBuilt: contourHandler.HasBuiltInitialDag,
 	}
 	if err := s.mgr.Add(xdsServer); err != nil {
 		return err
@@ -850,11 +830,11 @@ func (s *Server) setupDebugService(debugConfig contour_api_v1alpha1.DebugConfig,
 
 type xdsServer struct {
 	log             logrus.FieldLogger
+	mgr             manager.Manager
 	registry        *prometheus.Registry
 	config          contour_api_v1alpha1.XDSServerConfig
 	snapshotHandler *xdscache.SnapshotHandler
 	resources       []xdscache.ResourceCache
-	initialDagBuilt func() bool
 }
 
 func (x *xdsServer) NeedLeaderElection() bool {
@@ -864,13 +844,11 @@ func (x *xdsServer) NeedLeaderElection() bool {
 func (x *xdsServer) Start(ctx context.Context) error {
 	log := x.log.WithField("context", "xds")
 
-	log.Printf("waiting for the initial dag to be built")
-	if err := wait.PollUntilContextCancel(ctx, initialDagBuildPollPeriod, true, func(ctx context.Context) (done bool, err error) {
-		return x.initialDagBuilt(), nil
-	}); err != nil {
-		return fmt.Errorf("failed to wait for initial dag build, %w", err)
+	log.Printf("waiting for informer caches to sync")
+	if !x.mgr.GetCache().WaitForCacheSync(ctx) {
+		return errors.New("informer cache failed to sync")
 	}
-	log.Printf("the initial dag is built")
+	log.Printf("informer caches synced")
 
 	grpcServer := xds.NewServer(x.registry, grpcOptions(log, x.config.TLS)...)
 
@@ -975,12 +953,12 @@ func (s *Server) setupGatewayAPI(contourConfiguration contour_api_v1alpha1.Conto
 		// to process, we just need informers to get events.
 		case contourConfiguration.Gateway.GatewayRef != nil:
 			// Inform on GatewayClasses.
-			if err := s.informOnResource(&gatewayapi_v1beta1.GatewayClass{}, eventHandler); err != nil {
+			if err := informOnResource(&gatewayapi_v1beta1.GatewayClass{}, eventHandler, mgr.GetCache()); err != nil {
 				s.log.WithError(err).WithField("resource", "gatewayclasses").Fatal("failed to create informer")
 			}
 
 			// Inform on Gateways.
-			if err := s.informOnResource(&gatewayapi_v1beta1.Gateway{}, eventHandler); err != nil {
+			if err := informOnResource(&gatewayapi_v1beta1.Gateway{}, eventHandler, mgr.GetCache()); err != nil {
 				s.log.WithError(err).WithField("resource", "gateways").Fatal("failed to create informer")
 			}
 		// Otherwise, run the GatewayClass and Gateway controllers to determine
@@ -1051,12 +1029,12 @@ func (s *Server) setupGatewayAPI(contourConfiguration contour_api_v1alpha1.Conto
 		}
 
 		// Inform on ReferenceGrants.
-		if err := s.informOnResource(&gatewayapi_v1beta1.ReferenceGrant{}, eventHandler); err != nil {
+		if err := informOnResource(&gatewayapi_v1beta1.ReferenceGrant{}, eventHandler, mgr.GetCache()); err != nil {
 			s.log.WithError(err).WithField("resource", "referencegrants").Fatal("failed to create informer")
 		}
 
 		// Inform on Namespaces.
-		if err := s.informOnResource(&corev1.Namespace{}, eventHandler); err != nil {
+		if err := informOnResource(&corev1.Namespace{}, eventHandler, mgr.GetCache()); err != nil {
 			s.log.WithError(err).WithField("resource", "namespaces").Fatal("failed to create informer")
 		}
 	}
@@ -1219,18 +1197,12 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 	return builder
 }
 
-func (s *Server) informOnResource(obj client.Object, handler cache.ResourceEventHandler) error {
-	inf, err := s.mgr.GetCache().GetInformer(context.Background(), obj)
+func informOnResource(obj client.Object, handler cache.ResourceEventHandler, cache ctrl_cache.Cache) error {
+	inf, err := cache.GetInformer(context.Background(), obj)
 	if err != nil {
 		return err
 	}
 
-	registration, err := inf.AddEventHandler(handler)
-
-	if err != nil {
-		return err
-	}
-
-	s.handlerCacheSyncs = append(s.handlerCacheSyncs, registration.HasSynced)
-	return nil
+	_, err = inf.AddEventHandler(handler)
+	return err
 }

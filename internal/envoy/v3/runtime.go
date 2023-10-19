@@ -24,15 +24,11 @@ const (
 	maxRegexProgramSizeWarn  = 1000
 )
 
-func RuntimeLayers(configurableRuntimeFields map[string]*structpb.Value) []*envoy_service_runtime_v3.Runtime {
-	baseLayer := baseRuntimeLayer()
-	for k, v := range configurableRuntimeFields {
-		baseLayer.Fields[k] = v
-	}
+func RuntimeLayers() []*envoy_service_runtime_v3.Runtime {
 	return []*envoy_service_runtime_v3.Runtime{
 		{
 			Name:  DynamicRuntimeLayerName,
-			Layer: baseLayer,
+			Layer: baseRuntimeLayer(),
 		},
 	}
 }
@@ -40,8 +36,8 @@ func RuntimeLayers(configurableRuntimeFields map[string]*structpb.Value) []*envo
 func baseRuntimeLayer() *structpb.Struct {
 	return &structpb.Struct{
 		Fields: map[string]*structpb.Value{
-			"re2.max_program_size.error_level": structpb.NewNumberValue(maxRegexProgramSizeError),
-			"re2.max_program_size.warn_level":  structpb.NewNumberValue(maxRegexProgramSizeWarn),
+			"re2.max_program_size.error_level": {Kind: &structpb.Value_NumberValue{NumberValue: maxRegexProgramSizeError}},
+			"re2.max_program_size.warn_level":  {Kind: &structpb.Value_NumberValue{NumberValue: maxRegexProgramSizeWarn}},
 		},
 	}
 }

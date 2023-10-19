@@ -19,16 +19,12 @@ package contour
 import (
 	"context"
 	"reflect"
-	"sync/atomic"
 	"time"
-
-	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/cache/synctrack"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/projectcontour/contour/internal/dag"
 	"github.com/projectcontour/contour/internal/k8s"
+	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type EventHandlerConfig struct {
@@ -59,16 +55,9 @@ type EventHandler struct {
 	// seq is the sequence counter of the number of times
 	// an event has been received.
 	seq int
-
-	// syncTracker is used to update/query the status of the cache sync.
-	// Uses an internal counter: incremented at item start, decremented at end.
-	// HasSynced returns true if its UpstreamHasSynced returns true and the counter is non-positive.
-	syncTracker *synctrack.SingleFileTracker
-
-	initialDagBuilt atomic.Bool
 }
 
-func NewEventHandler(config EventHandlerConfig, upstreamHasSynced cache.InformerSynced) *EventHandler {
+func NewEventHandler(config EventHandlerConfig) *EventHandler {
 	return &EventHandler{
 		FieldLogger:     config.Logger,
 		builder:         config.Builder,
@@ -78,13 +67,11 @@ func NewEventHandler(config EventHandlerConfig, upstreamHasSynced cache.Informer
 		statusUpdater:   config.StatusUpdater,
 		update:          make(chan any),
 		sequence:        make(chan int, 1),
-		syncTracker:     &synctrack.SingleFileTracker{UpstreamHasSynced: upstreamHasSynced},
 	}
 }
 
 type opAdd struct {
-	obj             any
-	isInInitialList bool
+	obj any
 }
 
 type opUpdate struct {
@@ -96,10 +83,7 @@ type opDelete struct {
 }
 
 func (e *EventHandler) OnAdd(obj any, isInInitialList bool) {
-	if isInInitialList {
-		e.syncTracker.Start()
-	}
-	e.update <- opAdd{obj: obj, isInInitialList: isInInitialList}
+	e.update <- opAdd{obj: obj}
 }
 
 func (e *EventHandler) OnUpdate(oldObj, newObj any) {
@@ -110,13 +94,8 @@ func (e *EventHandler) OnDelete(obj any) {
 	e.update <- opDelete{obj: obj}
 }
 
-// NeedLeaderElection is included to implement manager.LeaderElectionRunnable
 func (e *EventHandler) NeedLeaderElection() bool {
 	return false
-}
-
-func (e *EventHandler) HasBuiltInitialDag() bool {
-	return e.initialDagBuilt.Load()
 }
 
 // Implements leadership.NeedLeaderElectionNotification
@@ -185,37 +164,9 @@ func (e *EventHandler) Start(ctx context.Context) error {
 				// not to process it.
 				e.incSequence()
 			}
-
-			// We're done processing this event
-			if updateOpAdd, ok := op.(opAdd); ok {
-				if updateOpAdd.isInInitialList {
-					e.syncTracker.Finished()
-				}
-			}
 		case <-pending:
-			// Ensure informer caches are synced.
-			// Schedule a retry for dag rebuild if cache is not synced yet.
-			// Note that we can't block and wait for the cache sync as it depends on progress of this loop.
-			if !e.syncTracker.HasSynced() {
-				e.Info("skipping dag rebuild as cache is not synced")
-				timer.Reset(e.holdoffDelay)
-				break
-			}
-
 			e.WithField("last_update", time.Since(lastDAGRebuild)).WithField("outstanding", reset()).Info("performing delayed update")
-
-			// Build a new DAG and sends it to the Observer.
-			latestDAG := e.builder.Build()
-			e.observer.OnChange(latestDAG)
-
-			// Allow XDS server to start (if it hasn't already).
-			e.initialDagBuilt.Store(true)
-
-			// Update the status on objects.
-			for _, upd := range latestDAG.StatusCache.GetStatusUpdates() {
-				e.statusUpdater.Send(upd)
-			}
-
+			e.rebuildDAG()
 			e.incSequence()
 			lastDAGRebuild = time.Now()
 		case <-ctx.Done():
@@ -233,22 +184,22 @@ func (e *EventHandler) onUpdate(op any) bool {
 	case opAdd:
 		return e.builder.Source.Insert(op.obj)
 	case opUpdate:
-		oldO, oldOk := op.oldObj.(client.Object)
-		newO, newOk := op.newObj.(client.Object)
+		old, oldOk := op.oldObj.(client.Object)
+		new, newOk := op.newObj.(client.Object)
 		if oldOk && newOk {
-			equal, err := k8s.IsObjectEqual(oldO, newO)
+			equal, err := k8s.IsObjectEqual(old, new)
 			// Error is returned if there was no support for comparing equality of the specific object type.
 			// We can still process the object but it will be always considered as changed.
 			if err != nil {
 				e.WithError(err).WithField("op", "update").
-					WithField("name", newO.GetName()).WithField("namespace", newO.GetNamespace()).
-					WithField("gvk", reflect.TypeOf(newO)).Errorf("error comparing objects")
+					WithField("name", new.GetName()).WithField("namespace", new.GetNamespace()).
+					WithField("gvk", reflect.TypeOf(new)).Errorf("error comparing objects")
 			}
 			if equal {
 				// log the object name and namespace to help with debugging.
 				e.WithField("op", "update").
-					WithField("name", oldO.GetName()).WithField("namespace", oldO.GetNamespace()).
-					WithField("gvk", reflect.TypeOf(newO)).Debugf("skipping update, no changes to relevant fields")
+					WithField("name", old.GetName()).WithField("namespace", old.GetNamespace()).
+					WithField("gvk", reflect.TypeOf(new)).Debugf("skipping update, no changes to relevant fields")
 				return false
 			}
 			remove := e.builder.Source.Remove(op.oldObj)
@@ -284,5 +235,16 @@ func (e *EventHandler) incSequence() {
 		// This is a non blocking send so if this field is nil, or the
 		// receiver is not ready this send does not block incSequence's caller.
 	default:
+	}
+}
+
+// rebuildDAG builds a new DAG and sends it to the Observer,
+// the updates the status on objects, and updates the metrics.
+func (e *EventHandler) rebuildDAG() {
+	latestDAG := e.builder.Build()
+	e.observer.OnChange(latestDAG)
+
+	for _, upd := range latestDAG.StatusCache.GetStatusUpdates() {
+		e.statusUpdater.Send(upd)
 	}
 }

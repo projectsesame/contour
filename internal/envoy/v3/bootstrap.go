@@ -241,7 +241,7 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_bootstrap_v3.Bootstrap {
 				LoadAssignment: &envoy_endpoint_v3.ClusterLoadAssignment{
 					ClusterName: "envoy-admin",
 					Endpoints: Endpoints(
-						UnixSocketAddress(c.GetAdminAddress()),
+						UnixSocketAddress(c.GetAdminAddress(), c.GetAdminPort()),
 					),
 				},
 			}},
@@ -252,7 +252,7 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_bootstrap_v3.Bootstrap {
 		},
 		Admin: &envoy_bootstrap_v3.Admin{
 			AccessLog: adminAccessLog(c.GetAdminAccessLogPath()),
-			Address:   UnixSocketAddress(c.GetAdminAddress()),
+			Address:   UnixSocketAddress(c.GetAdminAddress(), c.GetAdminPort()),
 		},
 	}
 	if c.MaximumHeapSizeBytes > 0 {

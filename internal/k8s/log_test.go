@@ -152,19 +152,26 @@ func TestMultipleLogWriterOptions(t *testing.T) {
 }
 
 func TestLogLevelOptionKlog(t *testing.T) {
-	log, _ := test.NewNullLogger()
+	log, logHook := test.NewNullLogger()
 	l := log.WithField("some", "field")
-	for logLevel := 0; logLevel <= 10; logLevel++ {
+	for logLevel := 1; logLevel <= 10; logLevel++ {
 		t.Run(fmt.Sprintf("log level %d", logLevel), func(t *testing.T) {
 			InitLogging(LogWriterOption(l), LogLevelOption(logLevel))
 			// Make sure log verbosity is set properly.
-			for verbosityLevel := 0; verbosityLevel <= 10; verbosityLevel++ {
+			for verbosityLevel := 1; verbosityLevel <= 10; verbosityLevel++ {
 				enabled := klog.V(klog.Level(verbosityLevel)).Enabled()
 				if verbosityLevel <= logLevel {
 					assert.True(t, enabled)
+					klog.V(klog.Level(verbosityLevel)).Info("something")
+					klog.Flush()
+					assert.Eventually(t, func() bool { return len(logHook.AllEntries()) == 1 }, klogFlushWaitTime, klogFlushWaitInterval)
 				} else {
 					assert.False(t, enabled)
+					klog.V(klog.Level(verbosityLevel)).Info("something")
+					klog.Flush()
+					assert.Never(t, func() bool { return len(logHook.AllEntries()) > 0 }, klogFlushWaitTime, klogFlushWaitInterval)
 				}
+				logHook.Reset()
 			}
 		})
 	}

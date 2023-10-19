@@ -96,12 +96,12 @@ func TestIsObjectEqual(t *testing.T) {
 			assert.Equal(t, 2, len(objects), "expected 2 objects in file")
 
 			// Decode the objects.
-			oldObj, _, err := deserializer.Decode([]byte(objects[0]), nil, nil)
+			old, _, err := deserializer.Decode([]byte(objects[0]), nil, nil)
 			assert.NoError(t, err)
-			newObj, _, err := deserializer.Decode([]byte(objects[1]), nil, nil)
+			new, _, err := deserializer.Decode([]byte(objects[1]), nil, nil)
 			assert.NoError(t, err)
 
-			got, err := IsObjectEqual(oldObj.(client.Object), newObj.(client.Object))
+			got, err := IsObjectEqual(old.(client.Object), new.(client.Object))
 			assert.NoError(t, err)
 			assert.Equal(t, tc.equals, got)
 		})
@@ -109,7 +109,7 @@ func TestIsObjectEqual(t *testing.T) {
 }
 
 func TestIsEqualForResourceVersion(t *testing.T) {
-	oldS := &v1.Secret{
+	old := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "test",
 			Namespace:       "default",
@@ -120,23 +120,23 @@ func TestIsEqualForResourceVersion(t *testing.T) {
 		},
 	}
 
-	newS := oldS.DeepCopy()
+	new := old.DeepCopy()
 
 	// Objects with equal ResourceVersion should evaluate to true.
-	got, err := IsObjectEqual(oldS, newS)
+	got, err := IsObjectEqual(old, new)
 	assert.NoError(t, err)
 	assert.True(t, got)
 
 	// Differences in data should be ignored.
-	newS.Data["foo"] = []byte("baz")
-	got, err = IsObjectEqual(oldS, newS)
+	new.Data["foo"] = []byte("baz")
+	got, err = IsObjectEqual(old, new)
 	assert.NoError(t, err)
 	assert.True(t, got)
 }
 
 // TestIsEqualFallback compares with ConfigMap objects, which are not supported.
 func TestIsEqualFallback(t *testing.T) {
-	oldObj := &v1.ConfigMap{
+	old := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "test",
 			Namespace:       "default",
@@ -147,37 +147,37 @@ func TestIsEqualFallback(t *testing.T) {
 		},
 	}
 
-	newObj := oldObj.DeepCopy()
+	new := old.DeepCopy()
 
 	// Any object (even unsupported types) with equal ResourceVersion should evaluate to true.
-	got, err := IsObjectEqual(oldObj, newObj)
+	got, err := IsObjectEqual(old, new)
 	assert.NoError(t, err)
 	assert.True(t, got)
 
 	// Unsupported types with unequal ResourceVersion should return an error.
-	newObj.ResourceVersion = "456"
-	got, err = IsObjectEqual(oldObj, newObj)
+	new.ResourceVersion = "456"
+	got, err = IsObjectEqual(old, new)
 	assert.Error(t, err)
 	assert.False(t, got)
 }
 
 func TestIsEqualForGeneration(t *testing.T) {
-	run := func(t *testing.T, oldObj client.Object) {
+	run := func(t *testing.T, old client.Object) {
 		t.Helper()
-		newObj := oldObj.DeepCopyObject().(client.Object)
+		new := old.DeepCopyObject().(client.Object)
 
 		// Set different ResourceVersion to ensure that Generation is the only difference.
-		oldObj.SetResourceVersion("123")
-		newObj.SetResourceVersion("456")
+		old.SetResourceVersion("123")
+		new.SetResourceVersion("456")
 
 		// Objects with equal Generation should evaluate to true.
-		got, err := IsObjectEqual(oldObj, newObj)
+		got, err := IsObjectEqual(old, new)
 		assert.NoError(t, err)
 		assert.True(t, got)
 
 		// Objects with unequal Generation should evaluate to false.
-		newObj.SetGeneration(oldObj.GetGeneration() + 1)
-		got, err = IsObjectEqual(oldObj, newObj)
+		new.SetGeneration(old.GetGeneration() + 1)
+		got, err = IsObjectEqual(old, new)
 		assert.NoError(t, err)
 		assert.False(t, got)
 	}
