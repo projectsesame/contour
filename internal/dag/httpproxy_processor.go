@@ -117,6 +117,9 @@ type HTTPProxyProcessor struct {
 
 	// Whether to set StatPrefix on envoy routes or not
 	EnableStatPrefix bool
+  
+	// GlobalOutlierDetection defines route-service's Global Outlier Detection configuration.
+	GlobalOutlierDetection *contour_api_v1.OutlierDetection
 }
 
 // Run translates HTTPProxies into DAG objects and
@@ -994,6 +997,13 @@ func (p *HTTPProxyProcessor) computeRoutes(
 				return nil
 			}
 
+			outlierDetection, err := outlierDetectionPolicy(p.GlobalOutlierDetection, service.OutlierDetection)
+			if err != nil {
+				validCond.AddErrorf(contour_api_v1.ConditionTypeOutlierDetectionError, "OutlierDetectionInvalid",
+					"%s on outlier detection", err)
+				return nil
+			}
+
 			var clientCertSecret *Secret
 			if p.ClientCertificate != nil {
 				// Since the client certificate is configured by admin, explicit delegation is not required.
@@ -1039,6 +1049,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 				SlowStartConfig:               slowStart,
 				MaxRequestsPerConnection:      p.MaxRequestsPerConnection,
 				PerConnectionBufferLimitBytes: p.PerConnectionBufferLimitBytes,
+				OutlierDetectionPolicy:        outlierDetection,
 			}
 			if service.Mirror && len(r.MirrorPolicies) > 0 {
 				validCond.AddError(contour_api_v1.ConditionTypeServiceError, "OnlyOneMirror",

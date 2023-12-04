@@ -562,6 +562,7 @@ func (s *Server) doServe() error {
 		maxRequestsPerConnection:           contourConfiguration.Envoy.Cluster.MaxRequestsPerConnection,
 		perConnectionBufferLimitBytes:      contourConfiguration.Envoy.Cluster.PerConnectionBufferLimitBytes,
 		enableStatPrefix:                   *contourConfiguration.Envoy.EnableStatPrefix,
+		globalOutlierDetection:             contourConfiguration.GlobalOutlierDetection,
 	})
 
 	// Build the core Kubernetes event handler.
@@ -1120,6 +1121,7 @@ type dagBuilderConfig struct {
 	perConnectionBufferLimitBytes      *uint32
 	globalRateLimitService             *contour_api_v1alpha1.RateLimitServiceConfig
 	enableStatPrefix                   bool
+	globalOutlierDetection             *contour_api_v1.OutlierDetection
 }
 
 func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
@@ -1214,6 +1216,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
 			EnableStatPrefix:              dbc.enableStatPrefix,
+			GlobalOutlierDetection:        dbc.globalOutlierDetection,
 		},
 	}
 
