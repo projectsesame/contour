@@ -85,11 +85,22 @@ type ContourConfigurationSpec struct {
 	// Tracing defines properties for exporting trace data to OpenTelemetry.
 	Tracing *TracingConfig `json:"tracing,omitempty"`
 
+	// FeatureFlags defines toggle to enable new contour features.
+	// Available toggles are:
+	// useEndpointSlices - configures contour to fetch endpoint data
+	// from k8s endpoint slices. defaults to false and reading endpoint
+	// data from the k8s endpoints.
+	FeatureFlags FeatureFlags `json:"featureFlags,omitempty"`
+
 	// GlobalOutlierDetection defines the configuration for outlier detection on all services.
 	// If defined, this will be used as the default for all services.
 	// +optional
 	GlobalOutlierDetection *contour_api_v1.OutlierDetection `json:"outlierDetection,omitempty"`
 }
+
+// FeatureFlags defines the set of feature flags
+// to toggle new contour features.
+type FeatureFlags []string
 
 // XDSServerType is the type of xDS server implementation.
 type XDSServerType string
@@ -306,6 +317,10 @@ type EnvoyConfig struct {
 	// Network holds various configurable Envoy network values.
 	// +optional
 	Network *NetworkParameters `json:"network,omitempty"`
+
+	// Set StatPrefix on envoy routes
+	// +optional
+	EnableStatPrefix *bool `json:"enableStatPrefix"`
 }
 
 // DebugConfig contains Contour specific troubleshooting options.

@@ -645,6 +645,7 @@ func TestHeadersPolicy(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			tc := tc
 			got, gotErr := headersPolicyService(&tc.dhp, tc.hp, true, dynamicHeaders)
 			if tc.wantErr {
 				assert.Error(t, gotErr)
