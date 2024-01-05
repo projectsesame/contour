@@ -2680,7 +2680,8 @@ QueryParameterMatchCondition
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#projectcontour.io/v1.Service">Service</a>)
+<a href="#projectcontour.io/v1.Service">Service</a>, 
+<a href="#projectcontour.io/v1alpha1.ContourConfigurationSpec">ContourConfigurationSpec</a>)
 </p>
 <p>
 <p>OutlierDetection defines the configuration for outlier detection on a service.</p>
@@ -2693,6 +2694,21 @@ QueryParameterMatchCondition
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="white-space:nowrap">
+<code>disabled</code>
+<br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Disabled configures the Service to not use
+the default global OutlierDetection policy defined by the Contour configuration.
+Defaults to false.</p>
+</td>
+</tr>
 <tr>
 <td style="white-space:nowrap">
 <code>consecutiveServerErrors</code>
@@ -2800,6 +2816,21 @@ uint32
 <p>MaxEjectionPercent is the max percentage of hosts in the load balancing pool for the upstream service that can be ejected.
 But will eject at least one host regardless of the value here.
 Defaults to 10%.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>maxEjectionTimeJitter</code>
+<br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MaxEjectionTimeJitter is The maximum amount of jitter to add to the ejection time,
+in order to prevent a ‘thundering herd’ effect where all proxies try to reconnect to host at the same time.
+Defaults to 0s.</p>
 </td>
 </tr>
 </tbody>
@@ -4175,7 +4206,9 @@ OutlierDetection
 </em>
 </td>
 <td>
-<p>The policy for managing outlier detection on a service.</p>
+<em>(Optional)</em>
+<p>The policy for managing outlier detection on a service.
+If not specified, the global OutlierDetection policy will be used.</p>
 </td>
 </tr>
 </tbody>
@@ -5293,6 +5326,22 @@ from k8s endpoint slices. defaults to false and reading endpoint
 data from the k8s endpoints.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>outlierDetection</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1.OutlierDetection">
+OutlierDetection
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GlobalOutlierDetection defines the configuration for outlier detection on all services.
+If defined, this will be used as the default for all services.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5436,6 +5485,8 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>ResourceLabels is a set of labels to add to the provisioned Contour resources.</p>
+<p>Deprecated: use Gateway.Spec.Infrastructure.Labels instead. This field will be
+removed in a future release.</p>
 </td>
 </tr>
 </table>
@@ -5813,6 +5864,37 @@ see <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v
 for more information.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>circuitBreakers</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.GlobalCircuitBreakerDefaults">
+GlobalCircuitBreakerDefaults
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GlobalCircuitBreakerDefaults specifies default circuit breaker budget across all services.
+If defined, this will be used as the default for all services.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>upstreamTLS</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.EnvoyTLS">
+EnvoyTLS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>UpstreamTLS contains the TLS policy parameters for upstream connections</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.ContourConfigurationSpec">ContourConfigurationSpec
@@ -6053,6 +6135,22 @@ from k8s endpoint slices. defaults to false and reading endpoint
 data from the k8s endpoints.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>outlierDetection</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1.OutlierDetection">
+OutlierDetection
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GlobalOutlierDetection defines the configuration for outlier detection on all services.
+If defined, this will be used as the default for all services.</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.ContourConfigurationStatus">ContourConfigurationStatus
@@ -6175,6 +6273,8 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>ResourceLabels is a set of labels to add to the provisioned Contour resources.</p>
+<p>Deprecated: use Gateway.Spec.Infrastructure.Labels instead. This field will be
+removed in a future release.</p>
 </td>
 </tr>
 </tbody>
@@ -7354,6 +7454,7 @@ More info: <a href="https://projectcontour.io/docs/main/config/overload-manager/
 </h3>
 <p>
 (<em>Appears on:</em>
+<a href="#projectcontour.io/v1alpha1.ClusterParameters">ClusterParameters</a>, 
 <a href="#projectcontour.io/v1alpha1.EnvoyListenerConfig">EnvoyListenerConfig</a>)
 </p>
 <p>
@@ -7745,6 +7846,76 @@ instance corresponds to. If set, Contour will reconcile
 only this gateway, and will not reconcile any gateway
 classes.
 Exactly one of ControllerName or GatewayRef must be set.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="projectcontour.io/v1alpha1.GlobalCircuitBreakerDefaults">GlobalCircuitBreakerDefaults
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#projectcontour.io/v1alpha1.ClusterParameters">ClusterParameters</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="white-space:nowrap">
+<code>maxConnections</code>
+<br>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The maximum number of connections that a single Envoy instance allows to the Kubernetes Service; defaults to 1024.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>maxPendingRequests</code>
+<br>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The maximum number of pending requests that a single Envoy instance allows to the Kubernetes Service; defaults to 1024.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>maxRequests</code>
+<br>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The maximum parallel requests a single Envoy instance allows to the Kubernetes Service; defaults to 1024</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>maxRetries</code>
+<br>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The maximum number of parallel retries a single Envoy instance allows to the Kubernetes Service; defaults to 3.</p>
 </td>
 </tr>
 </tbody>

@@ -27,6 +27,7 @@ import (
 	gatewayapi_v1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
+	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/annotation"
 	"github.com/projectcontour/contour/internal/ref"
 	"github.com/projectcontour/contour/internal/timeout"
@@ -810,6 +811,29 @@ func loadBalancerRequestHashPolicies(lbp *contour_api_v1.LoadBalancerPolicy, val
 
 }
 
+func serviceCircuitBreakerPolicy(s *Service, cb *contour_api_v1alpha1.GlobalCircuitBreakerDefaults) *Service {
+	if s == nil {
+		return nil
+	}
+
+	if s.MaxConnections == 0 && cb != nil {
+		s.MaxConnections = cb.MaxConnections
+	}
+
+	if s.MaxPendingRequests == 0 && cb != nil {
+		s.MaxPendingRequests = cb.MaxPendingRequests
+	}
+
+	if s.MaxRequests == 0 && cb != nil {
+		s.MaxRequests = cb.MaxRequests
+	}
+
+	if s.MaxRetries == 0 && cb != nil {
+		s.MaxRetries = cb.MaxRetries
+	}
+
+	return s
+}
 func mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection *contour_api_v1.OutlierDetection) *contour_api_v1.OutlierDetection {
 	if serviceOutlierDetection == nil {
 		if globalOutlierDetection == nil || globalOutlierDetection.Disabled {
@@ -826,8 +850,7 @@ func mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection
 }
 
 func outlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection *contour_api_v1.OutlierDetection) (*OutlierDetectionPolicy, error) {
-	var outlierDetection *contour_api_v1.OutlierDetection
-	outlierDetection = mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection)
+	outlierDetection := mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection)
 
 	if outlierDetection == nil {
 		return nil, nil

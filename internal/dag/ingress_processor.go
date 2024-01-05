@@ -21,13 +21,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/sirupsen/logrus"
-	networking_v1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/types"
-
+	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/annotation"
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/ref"
+	"github.com/sirupsen/logrus"
+	networking_v1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // IngressProcessor translates Ingresses into DAG
@@ -68,6 +68,12 @@ type IngressProcessor struct {
 	// without requiring all existing test cases to change.
 	SetSourceMetadataOnRoutes bool
 
+	// GlobalCircuitBreakerDefaults defines global circuit breaker defaults.
+	GlobalCircuitBreakerDefaults *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
+
+	// UpstreamTLS defines the TLS settings like min/max version
+	// and cipher suites for upstream connections.
+	UpstreamTLS *UpstreamTLS
 	// Whether to set StatPrefix on envoy routes or not
 	EnableStatPrefix bool
 }
@@ -218,6 +224,7 @@ func (p *IngressProcessor) computeIngressRule(ing *networking_v1.Ingress, rule n
 				Error("unresolved service reference")
 			continue
 		}
+		s = serviceCircuitBreakerPolicy(s, p.GlobalCircuitBreakerDefaults)
 
 		r, err := p.route(ing, rule.Host, path, pathType, s, clientCertSecret, be.Service.Name, be.Service.Port.Number, p.FieldLogger)
 		if err != nil {
@@ -299,6 +306,7 @@ func (p *IngressProcessor) route(ingress *networking_v1.Ingress, host string, pa
 			TimeoutPolicy:                 ClusterTimeoutPolicy{ConnectTimeout: p.ConnectTimeout},
 			MaxRequestsPerConnection:      p.MaxRequestsPerConnection,
 			PerConnectionBufferLimitBytes: p.PerConnectionBufferLimitBytes,
+			UpstreamTLS:                   p.UpstreamTLS,
 		}},
 	}
 

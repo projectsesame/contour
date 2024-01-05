@@ -822,6 +822,7 @@ type DNSNameCluster struct {
 	Port               int
 	DNSLookupFamily    string
 	UpstreamValidation *PeerValidationContext
+	UpstreamTLS        *UpstreamTLS
 }
 
 type JWTRule struct {
@@ -1045,6 +1046,8 @@ type Cluster struct {
 	// PerConnectionBufferLimitBytes defines the soft limit on size of the cluster’s new connection read and write buffers.
 	PerConnectionBufferLimitBytes *uint32
 
+	// UpstreamTLS contains the TLS version and cipher suite configurations for upstream connections
+	UpstreamTLS *UpstreamTLS
 	// OutlierDetection defines how to detect unhealthy hosts in the cluster, and evict them.
 	OutlierDetectionPolicy *OutlierDetectionPolicy
 }
@@ -1236,6 +1239,9 @@ type ExtensionCluster struct {
 	// ClientCertificate is the optional identifier of the TLS secret containing client certificate and
 	// private key to be used when establishing TLS connection to upstream cluster.
 	ClientCertificate *Secret
+
+	// UpstreamTLS contains the TLS version and cipher suite configurations for upstream connections
+	UpstreamTLS *UpstreamTLS
 }
 
 const singleDNSLabelWildcardRegex = "^[a-z0-9]([-a-z0-9]*[a-z0-9])?"
@@ -1266,6 +1272,13 @@ type SlowStartConfig struct {
 
 func (s *SlowStartConfig) String() string {
 	return fmt.Sprintf("%s%f%d", s.Window.String(), s.Aggression, s.MinWeightPercent)
+}
+
+// UpstreamTLS holds the TLS configuration for upstream connections
+type UpstreamTLS struct {
+	MinimumProtocolVersion string
+	MaximumProtocolVersion string
+	CipherSuites           []string
 }
 
 // OutlierDetectionPolicy holds configuration for outlier detection.

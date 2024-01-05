@@ -561,8 +561,14 @@ func (s *Server) doServe() error {
 		globalRateLimitService:             contourConfiguration.RateLimitService,
 		maxRequestsPerConnection:           contourConfiguration.Envoy.Cluster.MaxRequestsPerConnection,
 		perConnectionBufferLimitBytes:      contourConfiguration.Envoy.Cluster.PerConnectionBufferLimitBytes,
-		enableStatPrefix:                   *contourConfiguration.Envoy.EnableStatPrefix,
-		globalOutlierDetection:             contourConfiguration.GlobalOutlierDetection,
+		globalCircuitBreakerDefaults:       contourConfiguration.Envoy.Cluster.GlobalCircuitBreakerDefaults,
+		upstreamTLS: &dag.UpstreamTLS{
+			MinimumProtocolVersion: annotation.TLSVersion(contourConfiguration.Envoy.Cluster.UpstreamTLS.MinimumProtocolVersion, "1.2"),
+			MaximumProtocolVersion: annotation.TLSVersion(contourConfiguration.Envoy.Cluster.UpstreamTLS.MaximumProtocolVersion, "1.3"),
+			CipherSuites:           contourConfiguration.Envoy.Cluster.UpstreamTLS.SanitizedCipherSuites(),
+		},
+		enableStatPrefix:       *contourConfiguration.Envoy.EnableStatPrefix,
+		globalOutlierDetection: contourConfiguration.GlobalOutlierDetection,
 	})
 
 	// Build the core Kubernetes event handler.
@@ -1120,6 +1126,8 @@ type dagBuilderConfig struct {
 	maxRequestsPerConnection           *uint32
 	perConnectionBufferLimitBytes      *uint32
 	globalRateLimitService             *contour_api_v1alpha1.RateLimitServiceConfig
+	globalCircuitBreakerDefaults       *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
+	upstreamTLS                        *dag.UpstreamTLS
 	enableStatPrefix                   bool
 	globalOutlierDetection             *contour_api_v1.OutlierDetection
 }
@@ -1191,7 +1199,9 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			ConnectTimeout:                dbc.connectTimeout,
 			MaxRequestsPerConnection:      dbc.maxRequestsPerConnection,
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
+			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			SetSourceMetadataOnRoutes:     true,
+			UpstreamTLS:                   dbc.upstreamTLS,
 			EnableStatPrefix:              dbc.enableStatPrefix,
 		},
 		&dag.ExtensionServiceProcessor{
@@ -1200,6 +1210,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			FieldLogger:       s.log.WithField("context", "ExtensionServiceProcessor"),
 			ClientCertificate: dbc.clientCert,
 			ConnectTimeout:    dbc.connectTimeout,
+			UpstreamTLS:       dbc.upstreamTLS,
 		},
 		&dag.HTTPProxyProcessor{
 			EnableExternalNameService:     dbc.enableExternalNameService,
@@ -1215,6 +1226,8 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			GlobalRateLimitService:        dbc.globalRateLimitService,
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
+			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
+			UpstreamTLS:                   dbc.upstreamTLS,
 			EnableStatPrefix:              dbc.enableStatPrefix,
 			GlobalOutlierDetection:        dbc.globalOutlierDetection,
 		},
@@ -1228,6 +1241,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			MaxRequestsPerConnection:      dbc.maxRequestsPerConnection,
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
+			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			EnableStatPrefix:              dbc.enableStatPrefix,
 		})
 	}
