@@ -850,8 +850,7 @@ func mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection
 }
 
 func outlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection *contour_api_v1.OutlierDetection) (*OutlierDetectionPolicy, error) {
-	var outlierDetection *contour_api_v1.OutlierDetection
-	outlierDetection = mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection)
+	outlierDetection := mergeOutlierDetectionPolicy(globalOutlierDetection, serviceOutlierDetection)
 
 	if outlierDetection == nil {
 		return nil, nil

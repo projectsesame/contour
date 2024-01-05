@@ -78,16 +78,6 @@ func checkPodHasAnnotations(t *testing.T, tmpl *corev1.PodTemplateSpec, annotati
 	}
 }
 
-func checkPodHasLabels(t *testing.T, tmpl *corev1.PodTemplateSpec, labels map[string]string) {
-	t.Helper()
-
-	for k, v := range labels {
-		if val, ok := tmpl.Labels[k]; !ok || val != v {
-			t.Errorf("pod template has unexpected %q labels", tmpl.Labels)
-		}
-	}
-}
-
 func checkContainerHasArg(t *testing.T, container *corev1.Container, arg string) {
 	t.Helper()
 
