@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -566,6 +567,8 @@ func (s *Server) doServe() error {
 			MaximumProtocolVersion: annotation.TLSVersion(contourConfiguration.Envoy.Cluster.UpstreamTLS.MaximumProtocolVersion, "1.3"),
 			CipherSuites:           contourConfiguration.Envoy.Cluster.UpstreamTLS.SanitizedCipherSuites(),
 		},
+		enableStatPrefix:       *contourConfiguration.Envoy.EnableStatPrefix,
+		globalOutlierDetection: contourConfiguration.GlobalOutlierDetection,
 	})
 
 	// Build the core Kubernetes event handler.
@@ -1125,6 +1128,8 @@ type dagBuilderConfig struct {
 	globalRateLimitService             *contour_api_v1alpha1.RateLimitServiceConfig
 	globalCircuitBreakerDefaults       *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
 	upstreamTLS                        *dag.UpstreamTLS
+	enableStatPrefix                   bool
+	globalOutlierDetection             *contour_api_v1.OutlierDetection
 }
 
 func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
@@ -1197,6 +1202,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			SetSourceMetadataOnRoutes:     true,
 			UpstreamTLS:                   dbc.upstreamTLS,
+			EnableStatPrefix:              dbc.enableStatPrefix,
 		},
 		&dag.ExtensionServiceProcessor{
 			// Note that ExtensionService does not support ExternalName, if it does get added,
@@ -1222,6 +1228,8 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			SetSourceMetadataOnRoutes:     true,
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			UpstreamTLS:                   dbc.upstreamTLS,
+			EnableStatPrefix:              dbc.enableStatPrefix,
+			GlobalOutlierDetection:        dbc.globalOutlierDetection,
 		},
 	}
 
@@ -1234,6 +1242,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
+			EnableStatPrefix:              dbc.enableStatPrefix,
 		})
 	}
 

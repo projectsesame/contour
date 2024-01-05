@@ -291,7 +291,7 @@ func ContourDeploymentPodSelector(contour *model.Contour) *metav1.LabelSelector 
 }
 
 // contourPodLabels returns the labels for contour's pods, there are pod selector &
-// app labels
+// app & pod labels
 func contourPodLabels(contour *model.Contour) map[string]string {
 	labels := ContourDeploymentPodSelector(contour).MatchLabels
 	for k, v := range contour.WorkloadLabels() {

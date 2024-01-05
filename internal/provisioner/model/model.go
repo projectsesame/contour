@@ -78,6 +78,8 @@ func Default(namespace, name string) *Contour {
 			ResourceAnnotations:   map[string]string{},
 			EnvoyPodAnnotations:   map[string]string{},
 			ContourPodAnnotations: map[string]string{},
+			EnvoyPodLabels:        map[string]string{},
+			ContourPodLabels:      map[string]string{},
 		},
 	}
 }
@@ -224,6 +226,12 @@ type ContourSpec struct {
 	// ContourPodAnnotations holds the annotations that will be add to the contour's pod.
 	// the annotations: "prometheus.io/scrape", "prometheus.io/port" will be overwritten with predefined value.
 	ContourPodAnnotations map[string]string
+
+	// EnvoyPodLabels holds the labels that will be add to the envoy‘s pod.
+	EnvoyPodLabels map[string]string
+
+	// ContourPodLabels holds the labels that will be add to the contour's pod.
+	ContourPodLabels map[string]string
 
 	// Compute Resources required by envoy container.
 	EnvoyResources corev1.ResourceRequirements

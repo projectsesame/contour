@@ -24,10 +24,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/projectcontour/contour/internal/status"
-	"github.com/projectcontour/contour/internal/timeout"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/projectcontour/contour/internal/status"
+	"github.com/projectcontour/contour/internal/timeout"
 )
 
 // Observer is an interface for receiving notification of DAG updates.
@@ -373,6 +374,9 @@ type Route struct {
 	Kind      string
 	Namespace string
 	Name      string
+
+	// The stat_prefix to set on envoy route
+	StatPrefix *string
 }
 
 // HasPathPrefix returns whether this route has a PrefixPathCondition.
@@ -1044,6 +1048,8 @@ type Cluster struct {
 
 	// UpstreamTLS contains the TLS version and cipher suite configurations for upstream connections
 	UpstreamTLS *UpstreamTLS
+	// OutlierDetection defines how to detect unhealthy hosts in the cluster, and evict them.
+	OutlierDetectionPolicy *OutlierDetectionPolicy
 }
 
 // WeightedService represents the load balancing weight of a
@@ -1273,4 +1279,16 @@ type UpstreamTLS struct {
 	MinimumProtocolVersion string
 	MaximumProtocolVersion string
 	CipherSuites           []string
+}
+
+// OutlierDetectionPolicy holds configuration for outlier detection.
+type OutlierDetectionPolicy struct {
+	ConsecutiveServerErrors        uint32
+	Interval                       time.Duration
+	BaseEjectionTime               time.Duration
+	MaxEjectionTime                time.Duration
+	SplitExternalLocalOriginErrors bool
+	ConsecutiveLocalOriginFailure  uint32
+	MaxEjectionPercent             uint32
+	MaxEjectionTimeJitter          time.Duration
 }

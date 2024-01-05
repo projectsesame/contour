@@ -87,6 +87,15 @@ func (c *Contour) WorkloadLabels() map[string]string {
 		labels[k] = v
 	}
 
+	for k, v := range c.AppPredefinedLabels() {
+		labels[k] = v
+	}
+	return labels
+}
+
+// AppPredefinedLabels returns predefined labels for a Contour resources(Deployment/DaemonSet).
+func (c *Contour) AppPredefinedLabels() map[string]string {
+	labels := map[string]string{}
 	labels["app.kubernetes.io/instance"] = c.Name
 	labels["app.kubernetes.io/name"] = "contour"
 	labels["app.kubernetes.io/component"] = "ingress-controller"

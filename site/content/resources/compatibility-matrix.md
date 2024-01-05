@@ -187,5 +187,9 @@ __Note:__ This list of extensions was last verified to be complete with Envoy v1
 [106]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v0.6.0
 [107]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v0.6.2
 [108]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v0.8.0
+<<<<<<< HEAD
 [109]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v0.8.1
 [110]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v1.0.0
+=======
+[109]: https://github.com/kubernetes-sigs/gateway-api/releases/tag/v0.8.1
+>>>>>>> 02ef776d2ac58902e8bdb7a66047c48a9e206d59

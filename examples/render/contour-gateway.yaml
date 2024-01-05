@@ -417,6 +417,9 @@ spec:
                         version.
                       type: string
                     type: array
+                  enableStatPrefix:
+                    description: Set StatPrefix on envoy routes
+                    type: boolean
                   health:
                     description: "Health defines the endpoint Envoy uses to serve
                       health checks. \n Contour's default is { address: \"0.0.0.0\",
@@ -1716,6 +1719,13 @@ spec:
                     description: PodAnnotations defines annotations to add to the
                       Contour pods. the annotations for Prometheus will be appended
                       or overwritten with predefined value.
+                    type: object
+                  podLabels:
+                    additionalProperties:
+                      type: string
+                    description: PodLabels defines labels to add to the Contour pods.
+                      If there is a label with the same key as in `ContourDeploymentSpec.ResourceLabels`,
+                      the one here has a higher priority.
                     type: object
                   replicas:
                     description: "Deprecated: Use `DeploymentSettings.Replicas` instead.
@@ -3820,6 +3830,13 @@ spec:
                       Envoy pods. the annotations for Prometheus will be appended
                       or overwritten with predefined value.
                     type: object
+                  podLabels:
+                    additionalProperties:
+                      type: string
+                    description: PodLabels defines labels to add to the Envoy pods.
+                      If there is a label with the same key as in `ContourDeploymentSpec.ResourceLabels`,
+                      the one here has a higher priority.
+                    type: object
                   replicas:
                     description: "Deprecated: Use `DeploymentSettings.Replicas` instead.
                       \n Replicas is the desired number of Envoy replicas. If WorkloadType
@@ -4060,6 +4077,9 @@ spec:
                             HTTP version.
                           type: string
                         type: array
+                      enableStatPrefix:
+                        description: Set StatPrefix on envoy routes
+                        type: boolean
                       health:
                         description: "Health defines the endpoint Envoy uses to serve
                           health checks. \n Contour's default is { address: \"0.0.0.0\",
@@ -6751,6 +6771,69 @@ spec:
                               up corresponding endpoints which contain the ips to
                               route.
                             type: string
+                          outlierDetection:
+                            description: The policy for managing outlier detection
+                              on a service.
+                            properties:
+                              baseEjectionTime:
+                                description: BaseEjectionTime is the base time that
+                                  a host is ejected for. A host will remain ejected
+                                  for a period of time equal to the product of the
+                                  ejection base duration and the number of times the
+                                  host has been ejected. Defaults to 30s.
+                                pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                                type: string
+                              consecutiveLocalOriginFailure:
+                                description: ConsecutiveLocalOriginFailure defines
+                                  the number of consecutive local origin failures
+                                  before a consecutive local origin ejection occurs.
+                                  Parameters take effect only when SplitExternalLocalOriginErrors
+                                  is true. Defaults to 5.
+                                format: int32
+                                type: integer
+                              consecutiveServerErrors:
+                                description: ConsecutiveServerErrors defines The number
+                                  of consecutive server-side error responses before
+                                  a consecutive 5xx ejection occurs. When the backend
+                                  host encounters consecutive errors greater than
+                                  or equal to ConsecutiveServerErrors, it will be
+                                  ejected from the load balancing pool. for HTTP services,
+                                  a 5xx counts as an error and for TCP services connection
+                                  failures and connection timeouts count as an error.
+                                  It can be disabled by setting the value to 0. Defaults
+                                  to 5.
+                                format: int32
+                                type: integer
+                              interval:
+                                description: Interval is the interval at which host
+                                  status is evaluated. Defaults to 10s.
+                                pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                                type: string
+                              maxEjectionPercent:
+                                description: MaxEjectionPercent is the max percentage
+                                  of hosts in the load balancing pool for the upstream
+                                  service that can be ejected. But will eject at least
+                                  one host regardless of the value here. Defaults
+                                  to 10%.
+                                format: int32
+                                maximum: 100
+                                type: integer
+                              maxEjectionTime:
+                                description: MaxEjectionTime is the maximum time a
+                                  host will be ejected for. After this amount of time,
+                                  a host will be returned to normal operation. If
+                                  not specified, the default value (300s) or BaseEjectionTime
+                                  value is applied, whatever is larger. Defaults to
+                                  300s.
+                                pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                                type: string
+                              splitExternalLocalOriginErrors:
+                                default: false
+                                description: SplitExternalLocalOriginErrors defines
+                                  whether to split the local origin errors from the
+                                  external origin errors. Defaults to false.
+                                type: boolean
+                            type: object
                           port:
                             description: Port (defined as Integer) to proxy traffic
                               to since a service can have multiple defined.
@@ -7148,6 +7231,69 @@ spec:
                             traffic. Names defined here will be used to look up corresponding
                             endpoints which contain the ips to route.
                           type: string
+                        outlierDetection:
+                          description: The policy for managing outlier detection on
+                            a service.
+                          properties:
+                            baseEjectionTime:
+                              description: BaseEjectionTime is the base time that
+                                a host is ejected for. A host will remain ejected
+                                for a period of time equal to the product of the ejection
+                                base duration and the number of times the host has
+                                been ejected. Defaults to 30s.
+                              pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                              type: string
+                            consecutiveLocalOriginFailure:
+                              description: ConsecutiveLocalOriginFailure defines the
+                                number of consecutive local origin failures before
+                                a consecutive local origin ejection occurs. Parameters
+                                take effect only when SplitExternalLocalOriginErrors
+                                is true. Defaults to 5.
+                              format: int32
+                              type: integer
+                            consecutiveServerErrors:
+                              description: ConsecutiveServerErrors defines The number
+                                of consecutive server-side error responses before
+                                a consecutive 5xx ejection occurs. When the backend
+                                host encounters consecutive errors greater than or
+                                equal to ConsecutiveServerErrors, it will be ejected
+                                from the load balancing pool. for HTTP services, a
+                                5xx counts as an error and for TCP services connection
+                                failures and connection timeouts count as an error.
+                                It can be disabled by setting the value to 0. Defaults
+                                to 5.
+                              format: int32
+                              type: integer
+                            interval:
+                              description: Interval is the interval at which host
+                                status is evaluated. Defaults to 10s.
+                              pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                              type: string
+                            maxEjectionPercent:
+                              description: MaxEjectionPercent is the max percentage
+                                of hosts in the load balancing pool for the upstream
+                                service that can be ejected. But will eject at least
+                                one host regardless of the value here. Defaults to
+                                10%.
+                              format: int32
+                              maximum: 100
+                              type: integer
+                            maxEjectionTime:
+                              description: MaxEjectionTime is the maximum time a host
+                                will be ejected for. After this amount of time, a
+                                host will be returned to normal operation. If not
+                                specified, the default value (300s) or BaseEjectionTime
+                                value is applied, whatever is larger. Defaults to
+                                300s.
+                              pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms))+)$
+                              type: string
+                            splitExternalLocalOriginErrors:
+                              default: false
+                              description: SplitExternalLocalOriginErrors defines
+                                whether to split the local origin errors from the
+                                external origin errors. Defaults to false.
+                              type: boolean
+                          type: object
                         port:
                           description: Port (defined as Integer) to proxy traffic
                             to since a service can have multiple defined.

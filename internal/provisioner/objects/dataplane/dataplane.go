@@ -531,6 +531,13 @@ func envoyPodLabels(contour *model.Contour) map[string]string {
 	for k, v := range contour.WorkloadLabels() {
 		labels[k] = v
 	}
+	for k, v := range contour.Spec.EnvoyPodLabels {
+		labels[k] = v
+	}
+	for k, v := range contour.AppPredefinedLabels() {
+		labels[k] = v
+	}
+
 	return labels
 }
 

@@ -78,6 +78,8 @@ type GatewayAPIProcessor struct {
 
 	// GlobalCircuitBreakerDefaults defines global circuit breaker defaults.
 	GlobalCircuitBreakerDefaults *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
+	// Whether to set StatPrefix on envoy routes or not
+	EnableStatPrefix bool
 }
 
 // matchConditions holds match rules.
@@ -2180,6 +2182,10 @@ func (p *GatewayAPIProcessor) clusterRoutes(
 			route.Name = name
 		}
 
+		if p.EnableStatPrefix {
+			route.StatPrefix = ref.To(fmt.Sprintf("%s_%s", namespace, name))
+		}
+
 		routes = append(routes, route)
 	}
 
@@ -2246,6 +2252,10 @@ func (p *GatewayAPIProcessor) redirectRoutes(
 			route.Kind = kind
 			route.Namespace = namespace
 			route.Name = name
+		}
+
+		if p.EnableStatPrefix {
+			route.StatPrefix = ref.To(fmt.Sprintf("%s_%s", namespace, name))
 		}
 
 		routes = append(routes, route)
