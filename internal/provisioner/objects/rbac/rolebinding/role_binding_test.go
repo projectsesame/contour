@@ -72,8 +72,7 @@ func TestDesiredRoleBinding(t *testing.T) {
 	rb := desiredRoleBinding(rbName, svcAcct, roleRef, cntr)
 	checkRoleBindingName(t, rb, rbName)
 	ownerLabels := map[string]string{
-		model.ContourOwningGatewayNameLabel:    cntr.Name,
-		model.GatewayAPIOwningGatewayNameLabel: cntr.Name,
+		model.OwningGatewayNameLabel: cntr.Name,
 	}
 	checkRoleBindingLabels(t, rb, ownerLabels)
 	checkRoleBindingSvcAcct(t, rb, svcAcct, cntr.Namespace)

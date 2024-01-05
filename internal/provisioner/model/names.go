@@ -79,11 +79,10 @@ func (c *Contour) EnvoyRBACNames() RBACNames {
 	}
 }
 
-// WorkloadLabels returns labels to apply to the Contour and Envoy
-// workloads (i.e. deployment(s)/daemonset).
-func (c *Contour) WorkloadLabels() map[string]string {
+// AppLabels returns labels for a Contour resources(Deployment/DaemonSet).
+func (c *Contour) AppLabels() map[string]string {
 	labels := map[string]string{}
-	for k, v := range c.CommonLabels() {
+	for k, v := range CommonLabels(c) {
 		labels[k] = v
 	}
 
@@ -95,11 +94,8 @@ func (c *Contour) WorkloadLabels() map[string]string {
 	return labels
 }
 
-// CommonLabels returns labels to apply to all generated
-// resources. Note that WorkloadLabels should be used in
-// place of CommonLabels for the Contour and Envoy workload
-// resources.
-func (c *Contour) CommonLabels() map[string]string {
+// CommonLabels returns labels for Contour resources.
+func CommonLabels(c *Contour) map[string]string {
 	labels := map[string]string{}
 
 	// Add user-defined labels
@@ -113,18 +109,6 @@ func (c *Contour) CommonLabels() map[string]string {
 	}
 
 	return labels
-}
-
-// CommonAnnotations returns annotations to apply to all
-// generated resources.
-func (c *Contour) CommonAnnotations() map[string]string {
-	annotations := map[string]string{}
-
-	for k, v := range c.Spec.ResourceAnnotations {
-		annotations[k] = v
-	}
-
-	return annotations
 }
 
 // RBACNames holds a set of names of related RBAC resources.

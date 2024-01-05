@@ -49,8 +49,7 @@ func TestDesiredControllerRole(t *testing.T) {
 	role := desiredControllerRole(name, cntr)
 	checkRoleName(t, role, name)
 	ownerLabels := map[string]string{
-		model.ContourOwningGatewayNameLabel:    cntr.Name,
-		model.GatewayAPIOwningGatewayNameLabel: cntr.Name,
+		model.OwningGatewayNameLabel: cntr.Name,
 	}
 	checkRoleLabels(t, role, ownerLabels)
 }
