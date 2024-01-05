@@ -30,11 +30,6 @@ updates:
   - release-note/none-required
   reviewers:
   - projectcontour/maintainers
-  groups:
-    artifact-actions:
-      patterns:
-      - "actions/upload-artifact"
-      - "actions/download-artifact"
   
 # release branch N targets
 - target-branch: release-1.27
@@ -73,11 +68,6 @@ updates:
   - release-note/none-required
   reviewers:
   - projectcontour/maintainers
-  groups:
-    artifact-actions:
-      patterns:
-      - "actions/upload-artifact"
-      - "actions/download-artifact"
 
 # release branch N-1 targets
 - target-branch: release-1.26
@@ -116,11 +106,6 @@ updates:
   - release-note/none-required
   reviewers:
   - projectcontour/maintainers
-  groups:
-    artifact-actions:
-      patterns:
-      - "actions/upload-artifact"
-      - "actions/download-artifact"
 
 # release branch N-2 targets
 - target-branch: release-1.25
@@ -159,8 +144,3 @@ updates:
   - release-note/none-required
   reviewers:
   - projectcontour/maintainers
-  groups:
-    artifact-actions:
-      patterns:
-      - "actions/upload-artifact"
-      - "actions/download-artifact"

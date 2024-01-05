@@ -466,7 +466,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -478,7 +477,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{0, 1},
@@ -528,7 +526,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -540,7 +537,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{0, 1},
@@ -591,7 +587,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -603,7 +598,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{0},
@@ -623,7 +617,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -635,7 +628,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{1},
@@ -685,7 +677,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"TLSRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -697,7 +688,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{1},
@@ -717,7 +707,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"GRPCRoute"},
-					ready:        true,
 				},
 				{
 					listener: gatewayapi_v1beta1.Listener{
@@ -729,7 +718,6 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 						},
 					},
 					allowedKinds: []gatewayapi_v1beta1.Kind{"HTTPRoute"},
-					ready:        true,
 				},
 			},
 			want: []int{0},
@@ -754,13 +742,7 @@ func TestGetListenersForRouteParentRef(t *testing.T) {
 			rsu := &status.RouteStatusUpdate{}
 			rpsu := rsu.StatusUpdateFor(tc.routeParentRef)
 
-			got := processor.getListenersForRouteParentRef(
-				tc.routeParentRef,
-				tc.routeNamespace,
-				gatewayapi_v1beta1.Kind(tc.routeKind),
-				tc.listeners,
-				map[string]int{},
-				rpsu)
+			got := processor.getListenersForRouteParentRef(tc.routeParentRef, tc.routeNamespace, gatewayapi_v1beta1.Kind(tc.routeKind), tc.listeners, rpsu)
 
 			var want []*listenerInfo
 			for _, i := range tc.want {

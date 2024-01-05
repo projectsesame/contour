@@ -24,13 +24,9 @@ import (
 )
 
 const (
-	// ContourOwningGatewayNameLabel is the Contour-defined owner reference label applied
-	// to generated resources. The value should be the name of the Gateway.
-	ContourOwningGatewayNameLabel = "projectcontour.io/owning-gateway-name"
-
-	// GatewayAPIOwningGatewayNameLabel is the Gateway API-defined owner reference label applied
-	// to generated resources. The value should be the name of the Gateway.
-	GatewayAPIOwningGatewayNameLabel = "gateway.networking.k8s.io/gateway-name"
+	// OwningGatewayNameLabel is the owner reference label used for a Contour
+	// created by the gateway provisioner. The value should be the name of the Gateway.
+	OwningGatewayNameLabel = "projectcontour.io/owning-gateway-name"
 )
 
 // Default returns a default instance of a Contour
@@ -75,7 +71,6 @@ func Default(namespace, name string) *Contour {
 				},
 			},
 			ResourceLabels:        map[string]string{},
-			ResourceAnnotations:   map[string]string{},
 			EnvoyPodAnnotations:   map[string]string{},
 			ContourPodAnnotations: map[string]string{},
 		},
@@ -205,11 +200,8 @@ type ContourSpec struct {
 	// when envoy be running as a `DaemonSet`,it's must be nil
 	ContourDeploymentStrategy appsv1.DeploymentStrategy
 
-	// ResourceLabels is a set of labels to add to the provisioned resources.
+	// ResourceLabels is a set of labels to add to the provisioned Contour resource(s).
 	ResourceLabels map[string]string
-
-	// ResourceAnnotations is a set of annotations to add to the provisioned resources.
-	ResourceAnnotations map[string]string
 
 	// EnvoyExtraVolumes holds the extra volumes to add to envoy's pod.
 	EnvoyExtraVolumes []corev1.Volume
@@ -604,10 +596,18 @@ const (
 	ContourAvailableConditionType = "Available"
 )
 
+// OwningSelector returns a label selector using "projectcontour.io/owning-gateway-name".
+func OwningSelector(contour *Contour) *metav1.LabelSelector {
+	return &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			OwningGatewayNameLabel: contour.Name,
+		},
+	}
+}
+
 // OwnerLabels returns owner labels for the provided contour.
 func OwnerLabels(contour *Contour) map[string]string {
 	return map[string]string{
-		ContourOwningGatewayNameLabel:    contour.Name,
-		GatewayAPIOwningGatewayNameLabel: contour.Name,
+		OwningGatewayNameLabel: contour.Name,
 	}
 }

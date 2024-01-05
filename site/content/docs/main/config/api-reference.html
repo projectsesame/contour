@@ -5294,8 +5294,6 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>ResourceLabels is a set of labels to add to the provisioned Contour resources.</p>
-<p>Deprecated: use Gateway.Spec.Infrastructure.Labels instead. This field will be
-removed in a future release.</p>
 </td>
 </tr>
 </table>
@@ -5673,37 +5671,6 @@ see <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v
 for more information.</p>
 </td>
 </tr>
-<tr>
-<td style="white-space:nowrap">
-<code>circuitBreakers</code>
-<br>
-<em>
-<a href="#projectcontour.io/v1alpha1.GlobalCircuitBreakerDefaults">
-GlobalCircuitBreakerDefaults
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>GlobalCircuitBreakerDefaults specifies default circuit breaker budget across all services.
-If defined, this will be used as the default for all services.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>upstreamTLS</code>
-<br>
-<em>
-<a href="#projectcontour.io/v1alpha1.EnvoyTLS">
-EnvoyTLS
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>UpstreamTLS contains the TLS policy parameters for upstream connections</p>
-</td>
-</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.ContourConfigurationSpec">ContourConfigurationSpec
@@ -6066,8 +6033,6 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>ResourceLabels is a set of labels to add to the provisioned Contour resources.</p>
-<p>Deprecated: use Gateway.Spec.Infrastructure.Labels instead. This field will be
-removed in a future release.</p>
 </td>
 </tr>
 </tbody>
@@ -7204,7 +7169,6 @@ More info: <a href="https://projectcontour.io/docs/main/config/overload-manager/
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#projectcontour.io/v1alpha1.ClusterParameters">ClusterParameters</a>, 
 <a href="#projectcontour.io/v1alpha1.EnvoyListenerConfig">EnvoyListenerConfig</a>)
 </p>
 <p>
@@ -7596,76 +7560,6 @@ instance corresponds to. If set, Contour will reconcile
 only this gateway, and will not reconcile any gateway
 classes.
 Exactly one of ControllerName or GatewayRef must be set.</p>
-</td>
-</tr>
-</tbody>
-</table>
-<h3 id="projectcontour.io/v1alpha1.GlobalCircuitBreakerDefaults">GlobalCircuitBreakerDefaults
-</h3>
-<p>
-(<em>Appears on:</em>
-<a href="#projectcontour.io/v1alpha1.ClusterParameters">ClusterParameters</a>)
-</p>
-<p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="white-space:nowrap">
-<code>maxConnections</code>
-<br>
-<em>
-uint32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>The maximum number of connections that a single Envoy instance allows to the Kubernetes Service; defaults to 1024.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>maxPendingRequests</code>
-<br>
-<em>
-uint32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>The maximum number of pending requests that a single Envoy instance allows to the Kubernetes Service; defaults to 1024.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>maxRequests</code>
-<br>
-<em>
-uint32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>The maximum parallel requests a single Envoy instance allows to the Kubernetes Service; defaults to 1024</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
-<code>maxRetries</code>
-<br>
-<em>
-uint32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>The maximum number of parallel retries a single Envoy instance allows to the Kubernetes Service; defaults to 3.</p>
 </td>
 </tr>
 </tbody>

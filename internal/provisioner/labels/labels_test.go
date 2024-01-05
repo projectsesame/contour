@@ -17,28 +17,15 @@ import (
 	"testing"
 
 	"github.com/projectcontour/contour/internal/provisioner/model"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestAnyExist(t *testing.T) {
+func TestExist(t *testing.T) {
 	testCases := []struct {
 		description string
 		current     map[string]string
 		exist       map[string]string
 		expected    bool
 	}{
-		{
-			description: "nil labels",
-			current:     nil,
-			exist:       map[string]string{"name": "foo"},
-			expected:    false,
-		},
-		{
-			description: "empty labels",
-			current:     map[string]string{},
-			exist:       map[string]string{"name": "foo"},
-			expected:    false,
-		},
 		{
 			description: "one matched label",
 			current:     map[string]string{"name": "foo"},
@@ -49,7 +36,7 @@ func TestAnyExist(t *testing.T) {
 			description: "one of two matched labels",
 			current:     map[string]string{"name": "foo"},
 			exist:       map[string]string{"name": "foo", "ns": "foo-ns"},
-			expected:    true,
+			expected:    false,
 		},
 		{
 			description: "two matched labels",
@@ -69,14 +56,20 @@ func TestAnyExist(t *testing.T) {
 			exist:       map[string]string{"foo": "bar"},
 			expected:    false,
 		},
+		{
+			description: "two unmatched labels",
+			current:     map[string]string{"name": "bar"},
+			exist:       map[string]string{"name": "bar", "ns": "foo-ns"},
+			expected:    false,
+		},
 	}
 
+	contour := model.Contour{}
 	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			contour := model.Contour{}
-			contour.Labels = tc.current
-
-			assert.Equal(t, tc.expected, AnyExist(&contour, tc.exist))
-		})
+		contour.Labels = tc.current
+		result := Exist(&contour, tc.exist)
+		if result != tc.expected {
+			t.Fatalf("%q: returned %t, expected %t.", tc.description, result, tc.expected)
+		}
 	}
 }
