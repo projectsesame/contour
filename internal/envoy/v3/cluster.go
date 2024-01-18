@@ -78,13 +78,16 @@ func Cluster(c *dag.Cluster) *envoy_cluster_v3.Cluster {
 		cluster.IgnoreHealthOnHostRemoval = true
 	}
 
-	if envoy.AnyPositive(service.MaxConnections, service.MaxPendingRequests, service.MaxRequests, service.MaxRetries) {
+	if envoy.AnyPositive(service.MaxConnections, service.MaxPendingRequests, service.MaxRequests, service.MaxRetries, service.PerHostMaxConnections) {
 		cluster.CircuitBreakers = &envoy_cluster_v3.CircuitBreakers{
 			Thresholds: []*envoy_cluster_v3.CircuitBreakers_Thresholds{{
 				MaxConnections:     protobuf.UInt32OrNil(service.MaxConnections),
 				MaxPendingRequests: protobuf.UInt32OrNil(service.MaxPendingRequests),
 				MaxRequests:        protobuf.UInt32OrNil(service.MaxRequests),
 				MaxRetries:         protobuf.UInt32OrNil(service.MaxRetries),
+			}},
+			PerHostThresholds: []*envoy_cluster_v3.CircuitBreakers_Thresholds{{
+				MaxConnections: protobuf.UInt32OrNil(service.PerHostMaxConnections),
 			}},
 		}
 	}
@@ -305,7 +308,6 @@ func ClusterDiscoveryTypeForAddress(address string, t envoy_cluster_v3.Cluster_D
 
 // parseDNSLookupFamily parses the dnsLookupFamily string into a envoy_cluster_v3.Cluster_DnsLookupFamily
 func parseDNSLookupFamily(value string) envoy_cluster_v3.Cluster_DnsLookupFamily {
-
 	switch value {
 	case "v4":
 		return envoy_cluster_v3.Cluster_V4_ONLY

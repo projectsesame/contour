@@ -720,7 +720,8 @@ func TestKubernetesCacheInsert(t *testing.T) {
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
-						Namespace: "default"},
+						Namespace: "default",
+					},
 					Spec: gatewayapi_v1alpha2.TLSRouteSpec{
 						CommonRouteSpec: gatewayapi_v1alpha2.CommonRouteSpec{
 							ParentRefs: []gatewayapi_v1alpha2.ParentReference{
@@ -748,7 +749,8 @@ func TestKubernetesCacheInsert(t *testing.T) {
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
-						Namespace: "tlsroute"},
+						Namespace: "tlsroute",
+					},
 					Spec: gatewayapi_v1alpha2.TLSRouteSpec{
 						CommonRouteSpec: gatewayapi_v1alpha2.CommonRouteSpec{
 							ParentRefs: []gatewayapi_v1alpha2.ParentReference{
@@ -776,7 +778,8 @@ func TestKubernetesCacheInsert(t *testing.T) {
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
-						Namespace: "default"},
+						Namespace: "default",
+					},
 					Spec: gatewayapi_v1alpha2.TLSRouteSpec{
 						CommonRouteSpec: gatewayapi_v1alpha2.CommonRouteSpec{
 							ParentRefs: []gatewayapi_v1alpha2.ParentReference{
@@ -1125,7 +1128,8 @@ func TestKubernetesCacheInsert(t *testing.T) {
 			cache := KubernetesCache{
 				ConfiguredGatewayToCache: tc.cacheGateway,
 				ConfiguredSecretRefs: []*types.NamespacedName{
-					{Name: "secretReferredByConfigFile", Namespace: "default"}},
+					{Name: "secretReferredByConfigFile", Namespace: "default"},
+				},
 				FieldLogger: fixture.NewTestLogger(t),
 				Client:      new(fakeReader),
 			}
@@ -1218,7 +1222,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
-						Namespace: "default"},
+						Namespace: "default",
+					},
 					Spec: gatewayapi_v1alpha2.TLSRouteSpec{
 						CommonRouteSpec: gatewayapi_v1alpha2.CommonRouteSpec{
 							ParentRefs: []gatewayapi_v1alpha2.ParentReference{
@@ -1252,7 +1257,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
-						Namespace: "default"},
+						Namespace: "default",
+					},
 					Spec: gatewayapi_v1alpha2.TLSRouteSpec{
 						CommonRouteSpec: gatewayapi_v1alpha2.CommonRouteSpec{
 							ParentRefs: []gatewayapi_v1alpha2.ParentReference{
@@ -1410,7 +1416,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "Gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1beta1.HTTPRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "httproute",
@@ -1431,7 +1438,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1beta1.HTTPRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "httproute",
@@ -1466,7 +1474,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "Gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.TLSRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
@@ -1486,7 +1495,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.TLSRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tlsroute",
@@ -1521,7 +1531,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "Gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.GRPCRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "grpcroute",
@@ -1541,7 +1552,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.GRPCRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "grpcroute",
@@ -1576,7 +1588,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "Gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.TCPRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tcproute",
@@ -1596,7 +1609,8 @@ func TestKubernetesCacheRemove(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "gateway",
 					Namespace: "default",
-				}},
+				},
+			},
 				&gatewayapi_v1alpha2.TCPRoute{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tcproute",
@@ -1835,9 +1849,9 @@ func TestLookupService(t *testing.T) {
 			switch {
 			case tc.wantErr != nil:
 				require.Error(t, gotErr)
-				assert.EqualError(t, tc.wantErr, gotErr.Error())
+				require.EqualError(t, tc.wantErr, gotErr.Error())
 			default:
-				assert.Nil(t, gotErr)
+				require.NoError(t, gotErr)
 				assert.Equal(t, tc.wantSvc, gotSvc)
 				assert.Equal(t, tc.wantPort, gotPort)
 			}
@@ -1846,7 +1860,6 @@ func TestLookupService(t *testing.T) {
 }
 
 func TestServiceTriggersRebuild(t *testing.T) {
-
 	cache := func(objs ...any) *KubernetesCache {
 		cache := KubernetesCache{
 			FieldLogger: fixture.NewTestLogger(t),
@@ -2184,7 +2197,6 @@ func TestServiceTriggersRebuild(t *testing.T) {
 }
 
 func TestSecretTriggersRebuild(t *testing.T) {
-
 	secret := func(namespace, name string) *v1.Secret {
 		return &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2221,7 +2233,7 @@ func TestSecretTriggersRebuild(t *testing.T) {
 		}
 	}
 
-	ingress := func(namespace, name, secretName string, secretNamespace string) *networking_v1.Ingress {
+	ingress := func(namespace, name, secretName, secretNamespace string) *networking_v1.Ingress {
 		i := &networking_v1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -2484,7 +2496,6 @@ func TestSecretTriggersRebuild(t *testing.T) {
 }
 
 func TestRouteTriggersRebuild(t *testing.T) {
-
 	cache := func(objs ...any) *KubernetesCache {
 		cache := KubernetesCache{
 			FieldLogger: fixture.NewTestLogger(t),
@@ -2643,6 +2654,99 @@ func TestRouteTriggersRebuild(t *testing.T) {
 			}
 			if tc.tlsroute != nil {
 				assert.Equal(t, tc.want, tc.cache.routeTriggersRebuild(tc.tlsroute.Spec.ParentRefs))
+			}
+		})
+	}
+}
+
+func TestLookupUpstreamValidation(t *testing.T) {
+	cache := func(objs ...any) *KubernetesCache {
+		cache := KubernetesCache{
+			FieldLogger: fixture.NewTestLogger(t),
+		}
+		for _, o := range objs {
+			cache.Insert(o)
+		}
+		return &cache
+	}
+
+	uv := func(subjectName string, subjectNames []string) *contour_api_v1.UpstreamValidation {
+		return &contour_api_v1.UpstreamValidation{
+			CACertificate: "ca",
+			SubjectName:   subjectName,
+			SubjectNames:  subjectNames,
+		}
+	}
+
+	secret := func() *v1.Secret {
+		return &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ca",
+				Namespace: "default",
+			},
+			Type: v1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				CACertificateKey: []byte(fixture.CERTIFICATE),
+			},
+		}
+	}
+
+	pvc := func(subjectNames []string) *PeerValidationContext {
+		return &PeerValidationContext{
+			CACertificate: &Secret{
+				Object:        secret(),
+				ValidCASecret: &SecretValidationStatus{},
+			},
+			SubjectNames: subjectNames,
+		}
+	}
+
+	tests := map[string]struct {
+		cache   *KubernetesCache
+		meta    types.NamespacedName
+		uv      *contour_api_v1.UpstreamValidation
+		wantPvc *PeerValidationContext
+		wantErr error
+	}{
+		"contains both SubjectName and SubjectNames correctly": {
+			cache:   cache(secret()),
+			uv:      uv("example.com", []string{"example.com", "extra.com"}),
+			meta:    types.NamespacedName{Namespace: "default", Name: "ca"},
+			wantPvc: pvc([]string{"example.com", "extra.com"}),
+		},
+		"SubjectName does not match SubjectNames[0]": {
+			cache:   cache(secret()),
+			uv:      uv("example.com", []string{"wrong.com", "extra.com"}),
+			meta:    types.NamespacedName{Namespace: "default", Name: "ca"},
+			wantPvc: pvc([]string{"example.com", "extra.com"}),
+			wantErr: errors.New("first entry of SubjectNames (wrong.com) does not match SubjectName (example.com)"),
+		},
+		"SubjectName missing": {
+			cache:   cache(secret()),
+			uv:      uv("", []string{"wrong.com", "extra.com"}),
+			meta:    types.NamespacedName{Namespace: "default", Name: "ca"},
+			wantPvc: pvc([]string{"example.com", "extra.com"}),
+			wantErr: errors.New("missing subject alternative name"),
+		},
+		"SubjectNames missing": {
+			cache:   cache(secret()),
+			uv:      uv("example.com", []string{}),
+			meta:    types.NamespacedName{Namespace: "default", Name: "ca"},
+			wantPvc: pvc([]string{"example.com"}),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			gotPvc, gotErr := tc.cache.LookupUpstreamValidation(tc.uv, tc.meta, "default")
+
+			switch {
+			case tc.wantErr != nil:
+				require.Error(t, gotErr)
+				require.EqualError(t, tc.wantErr, gotErr.Error())
+			default:
+				require.NoError(t, gotErr)
+				assert.Equal(t, tc.wantPvc, gotPvc)
 			}
 		})
 	}

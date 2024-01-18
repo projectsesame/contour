@@ -183,7 +183,6 @@ func checkDaemonSetHasVolume(t *testing.T, ds *appsv1.DaemonSet, vol corev1.Volu
 	if !(hasVol && hasVolMount) {
 		t.Errorf("daemonset has not found volume or volumeMount")
 	}
-
 }
 
 func checkDaemonSetHasResourceRequirements(t *testing.T, ds *appsv1.DaemonSet, expected corev1.ResourceRequirements) {
@@ -194,6 +193,7 @@ func checkDaemonSetHasResourceRequirements(t *testing.T, ds *appsv1.DaemonSet, e
 	}
 	t.Errorf("daemonset has unexpected resource requirements %v", expected)
 }
+
 func checkDaemonSetHasUpdateStrategy(t *testing.T, ds *appsv1.DaemonSet, expected appsv1.DaemonSetUpdateStrategy) {
 	t.Helper()
 
@@ -374,7 +374,6 @@ func TestDesiredDeployment(t *testing.T) {
 	testEnvoyImage := "docker.io/envoyproxy/envoy:test"
 	deploy := desiredDeployment(cntr, testContourImage, testEnvoyImage)
 	checkDeploymentHasStrategy(t, deploy, cntr.Spec.EnvoyDeploymentStrategy)
-
 }
 
 func TestNodePlacementDaemonSet(t *testing.T) {

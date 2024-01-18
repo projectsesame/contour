@@ -61,13 +61,14 @@ var annotationsByKind = map[string]map[string]struct{}{
 		"projectcontour.io/websocket-routes":             {},
 	},
 	"Service": {
-		"projectcontour.io/max-connections":       {},
-		"projectcontour.io/max-pending-requests":  {},
-		"projectcontour.io/max-requests":          {},
-		"projectcontour.io/max-retries":           {},
-		"projectcontour.io/upstream-protocol.h2":  {},
-		"projectcontour.io/upstream-protocol.h2c": {},
-		"projectcontour.io/upstream-protocol.tls": {},
+		"projectcontour.io/max-connections":          {},
+		"projectcontour.io/max-pending-requests":     {},
+		"projectcontour.io/max-requests":             {},
+		"projectcontour.io/max-retries":              {},
+		"projectcontour.io/per-host-max-connections": {},
+		"projectcontour.io/upstream-protocol.h2":     {},
+		"projectcontour.io/upstream-protocol.h2c":    {},
+		"projectcontour.io/upstream-protocol.tls":    {},
 	},
 	"HTTPProxy": {
 		"kubernetes.io/ingress.class":     {},
@@ -79,7 +80,7 @@ var annotationsByKind = map[string]map[string]struct{}{
 }
 
 // ValidForKind checks if a particular annotation is valid for a given Kind.
-func ValidForKind(kind string, key string) bool {
+func ValidForKind(kind, key string) bool {
 	if a, ok := annotationsByKind[kind]; ok {
 		_, ok := a[key]
 		return ok
@@ -174,7 +175,6 @@ func WebsocketRoutes(i *networking_v1.Ingress) map[string]bool {
 // NumRetries returns the number of retries specified by the
 // "projectcontour.io/num-retries" annotation.
 func NumRetries(i *networking_v1.Ingress) uint32 {
-
 	val := parseInt32(ContourAnnotation(i, "num-retries"))
 
 	// If set to -1, then retries set to 0. If set to 0 or
@@ -212,7 +212,7 @@ func IngressClass(o metav1.Object) string {
 
 // TLSVersion returns the TLS protocol version specified by an ingress annotation
 // or default if non present.
-func TLSVersion(version string, defaultVal string) string {
+func TLSVersion(version, defaultVal string) string {
 	switch version {
 	case "1.2", "1.3":
 		return version
@@ -255,4 +255,13 @@ func MaxRequests(o metav1.Object) uint32 {
 // '0' is returned if the annotation is absent or unparsable.
 func MaxRetries(o metav1.Object) uint32 {
 	return parseUInt32(ContourAnnotation(o, "max-retries"))
+}
+
+// PerHostMaxConnections returns the value of the first matching
+// per-host-max-connectionss annotation for the following annotations:
+// 1. projectcontour.io/per-host-max-connections
+//
+// '0' is returned if the annotation is absent or unparsable.
+func PerHostMaxConnections(o metav1.Object) uint32 {
+	return parseUInt32(ContourAnnotation(o, "per-host-max-connections"))
 }

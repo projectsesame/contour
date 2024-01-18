@@ -60,6 +60,8 @@ var _ = AfterSuite(func() {
 var _ = Describe("HTTPProxy API validation", func() {
 	f.NamespacedTest("httpproxy-required-field-validation", testRequiredFieldValidation)
 
+	f.NamespacedTest("httpproxy-cel-validation", testCELValidation)
+
 	f.NamespacedTest("httpproxy-invalid-wildcard-fqdn", testWildcardFQDN)
 
 	f.NamespacedTest("invalid-cookie-rewrite-fields", testInvalidCookieRewriteFields)
@@ -383,7 +385,6 @@ var _ = Describe("HTTPProxy", func() {
 
 			testBackendTLSProtocolVersion(namespace, expectedProtocolVersion)
 		})
-
 	})
 
 	f.NamespacedTest("httpproxy-external-auth", testExternalAuth)
@@ -855,5 +856,4 @@ descriptors:
 
 		f.NamespacedTest("httpproxy-global-ext-auth-tls-disabled", withGlobalExtAuth(testGlobalExternalAuthTLSAuthDisabled))
 	})
-
 })

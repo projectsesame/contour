@@ -240,5 +240,4 @@ func TestNodePlacementDeployment(t *testing.T) {
 
 	checkDeploymentHasNodeSelector(t, deploy, selectors)
 	checkDeploymentHasTolerations(t, deploy, tolerations)
-
 }
