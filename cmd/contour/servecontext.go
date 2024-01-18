@@ -593,6 +593,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_api_v1alpha
 		},
 		EnableExternalNameService:   &ctx.Config.EnableExternalNameService,
 		GlobalExternalAuthorization: globalExtAuth,
+		GlobalExternalProcessor:     ctx.Config.GlobalExternalProcessor,
 		RateLimitService:            rateLimitService,
 		Policy:                      policy,
 		Metrics:                     &contourMetrics,

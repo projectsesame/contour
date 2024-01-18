@@ -112,6 +112,9 @@ type Deployment struct {
 	GlobalExtAuthDeployment       *apps_v1.Deployment
 	GlobalExtAuthService          *v1.Service
 	GlobalExtAuthExtensionService *contour_api_v1alpha1.ExtensionService
+
+	//TODO: lewgun
+	GlobalExtProcExtensionService *contour_api_v1alpha1.ExtensionService
 }
 
 // UnmarshalResources unmarshals resources from rendered Contour manifest in

@@ -209,6 +209,11 @@ func (in *ContourConfigurationSpec) DeepCopyInto(out *ContourConfigurationSpec) 
 		*out = new(TracingConfig)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.GlobalExternalProcessor != nil {
+		in, out := &in.GlobalExternalProcessor, &out.GlobalExternalProcessor
+		*out = new(v1.ExternalProcessor)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.FeatureFlags != nil {
 		in, out := &in.FeatureFlags, &out.FeatureFlags
 		*out = make(FeatureFlags, len(*in))

@@ -27,6 +27,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	"github.com/projectcontour/contour/internal/status"
 	"github.com/projectcontour/contour/internal/timeout"
 )
@@ -274,6 +275,16 @@ type InternalRedirectPolicy struct {
 	DenyRepeatedRouteRedirect bool
 }
 
+// Overrides that may be set on a per-route basis
+type ExtProcOverrides struct {
+	// Set a different processing mode for this route than the default.
+	ProcessingMode *contour_api_v1.ProcessingMode
+
+	// Set a different gRPC service for this route than the default.
+	ExtProcService  *ExtensionCluster
+	ResponseTimeout *timeout.Setting
+}
+
 // Route defines the properties of a route to a Cluster.
 type Route struct {
 	// PathMatchCondition specifies a MatchCondition to match on the request path.
@@ -365,10 +376,15 @@ type Route struct {
 	// If false, traffic is allowed only if it doesn't match any rule.
 	IPFilterAllow bool
 
-	// IPFilterRules is a list of ipv4/6 filter rules for which matching
+	// IPFilterRules i /6 filter rules for which matching
 	// requests should be filtered. The behavior of the filters is governed
 	// by IPFilterAllow.
 	IPFilterRules []IPFilterRule
+
+	// ExtProcDisabled disable the filter for this particular vhost or route.
+	// If disabled is specified in multiple per-filter-configs, the most specific one will be used.
+	ExtProcDisabled  bool
+	ExtProcOverrides *ExtProcOverrides
 
 	// Metadata fields that can be used for access logging.
 	Kind      string
@@ -796,6 +812,10 @@ type SecureVirtualHost struct {
 	// the ExtAuthz filter.
 	ExternalAuthorization *ExternalAuthorization
 
+	// ExtProcs contains the configurations for enabling
+	// the ExtProc filters.
+	ExtProcs []*ExternalProcessor
+
 	// JWTProviders specify how to verify JWTs.
 	JWTProviders []JWTProvider
 }
@@ -863,6 +883,39 @@ type ExternalAuthorization struct {
 	// AuthorizationServerWithRequestBody specifies configuration
 	// for buffering request data sent to AuthorizationServer
 	AuthorizationServerWithRequestBody *AuthorizationServerBufferSettings
+}
+
+type ExternalProcessor struct {
+	// ExtProcService points to the extension that client
+	// requests are forwarded to for external processing. If nil, no
+	// external processing is enabled for this host.
+	ExtProcService *ExtensionCluster
+
+	// ResponseTimeout sets how long the proxy should wait
+	// for external processor responses.
+	// This is the timeout for a specific request.
+	ResponseTimeout timeout.Setting
+
+	// FailOpen sets whether authorization server
+	// failures should cause the client request to also fail. The
+	// only reason to set this to `true` is when you are migrating
+	// from internal to external authorization.
+	FailOpen bool
+
+	// Phase determines where in the filter chain this extProc is to be injected.
+	Phase contour_api_v1.ProcessingPhase
+
+	// Priority determines ordering of processing filters in the same phase. When multiple extProc are applied to the same workload in the same phase,
+	// they will be applied by priority, in descending order, If priority is not set or two extProc exist with the same value,
+	// they will follow the order in which extProc(s) are added, Defaults to 0.
+	Priority int32
+
+	// Specifies default options for how HTTP headers, trailers, and bodies are sent.
+	ProcessingMode *contour_api_v1.ProcessingMode
+
+	// Rules that determine what modifications an external processing server may
+	// make to message headers.
+	MutationRules *contour_api_v1.HeaderMutationRules
 }
 
 // AuthorizationServerBufferSettings enables ExtAuthz filter to buffer client
