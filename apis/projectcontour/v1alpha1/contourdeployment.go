@@ -14,9 +14,11 @@
 package v1alpha1
 
 import (
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apps_v1 "k8s.io/api/apps/v1"
+	core_v1 "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 )
 
 // LogLevel is the logging levels available.
@@ -112,7 +114,7 @@ type ContourSettings struct {
 	// Cannot be updated.
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources core_v1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Deployment describes the settings for running contour as a `Deployment`.
 	// +optional
@@ -123,11 +125,21 @@ type ContourSettings struct {
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 
-	// PodLabels defines labels to add to the Contour pods.
-	// If there is a label with the same key as in `ContourDeploymentSpec.ResourceLabels`,
-	// the one here has a higher priority.
+	// WatchNamespaces is an array of namespaces. Setting it will instruct the contour instance
+	// to only watch this subset of namespaces.
 	// +optional
-	PodLabels map[string]string `json:"podLabels,omitempty"`
+	// +kubebuilder:validation:Type=array
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=42
+	WatchNamespaces []contour_v1.Namespace `json:"watchNamespaces,omitempty"`
+
+	// DisabledFeatures defines an array of resources that will be ignored by
+	// contour reconciler.
+	// +optional
+	// +kubebuilder:validation:Type=array
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=42
+	DisabledFeatures []contour_v1.Feature `json:"disabledFeatures,omitempty"`
 }
 
 // DeploymentSettings contains settings for Deployment resources.
@@ -139,14 +151,14 @@ type DeploymentSettings struct {
 
 	// Strategy describes the deployment strategy to use to replace existing pods with new pods.
 	// +optional
-	Strategy *appsv1.DeploymentStrategy `json:"strategy,omitempty"`
+	Strategy *apps_v1.DeploymentStrategy `json:"strategy,omitempty"`
 }
 
 // DaemonSetSettings contains settings for DaemonSet resources.
 type DaemonSetSettings struct {
 	// Strategy describes the deployment strategy to use to replace existing DaemonSet pods with new pods.
 	// +optional
-	UpdateStrategy *appsv1.DaemonSetUpdateStrategy `json:"updateStrategy,omitempty"`
+	UpdateStrategy *apps_v1.DaemonSetUpdateStrategy `json:"updateStrategy,omitempty"`
 }
 
 // EnvoySettings contains settings for the Envoy part of the installation,
@@ -183,11 +195,11 @@ type EnvoySettings struct {
 
 	// ExtraVolumes holds the extra volumes to add.
 	// +optional
-	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
+	ExtraVolumes []core_v1.Volume `json:"extraVolumes,omitempty"`
 
 	// ExtraVolumeMounts holds the extra volume mounts to add (normally used with extraVolumes).
 	// +optional
-	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+	ExtraVolumeMounts []core_v1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 
 	// PodAnnotations defines annotations to add to the Envoy pods.
 	// the annotations for Prometheus will be appended or overwritten with predefined value.
@@ -204,7 +216,7 @@ type EnvoySettings struct {
 	// Cannot be updated.
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources core_v1.ResourceRequirements `json:"resources,omitempty"`
 
 	// LogLevel sets the log level for Envoy.
 	// Allowed values are "trace", "debug", "info", "warn", "error", "critical", "off".
@@ -300,7 +312,7 @@ type NetworkPublishing struct {
 	// If unset, defaults to "Local".
 	//
 	// +optional
-	ExternalTrafficPolicy corev1.ServiceExternalTrafficPolicyType `json:"externalTrafficPolicy,omitempty"`
+	ExternalTrafficPolicy core_v1.ServiceExternalTrafficPolicyType `json:"externalTrafficPolicy,omitempty"`
 
 	// IPFamilyPolicy represents the dual-stack-ness requested or required by
 	// this Service. If there is no value provided, then this field will be set
@@ -310,7 +322,7 @@ type NetworkPublishing struct {
 	// (two IP families on dual-stack configured clusters, otherwise fail).
 	//
 	// +optional
-	IPFamilyPolicy corev1.IPFamilyPolicy `json:"ipFamilyPolicy,omitempty"`
+	IPFamilyPolicy core_v1.IPFamilyPolicy `json:"ipFamilyPolicy,omitempty"`
 
 	// ServiceAnnotations is the annotations to add to
 	// the provisioned Envoy service.
@@ -361,7 +373,7 @@ type NodePlacement struct {
 	// for additional details.
 	//
 	// +optional
-	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	Tolerations []core_v1.Toleration `json:"tolerations,omitempty"`
 }
 
 // ContourDeploymentStatus defines the observed state of a ContourDeployment resource.
@@ -373,7 +385,7 @@ type ContourDeploymentStatus struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=type
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Conditions []meta_v1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +genclient
@@ -383,8 +395,8 @@ type ContourDeploymentStatus struct {
 
 // ContourDeployment is the schema for a Contour Deployment.
 type ContourDeployment struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	meta_v1.TypeMeta   `json:",inline"`
+	meta_v1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   ContourDeploymentSpec   `json:"spec,omitempty"`
 	Status ContourDeploymentStatus `json:"status,omitempty"`
@@ -395,7 +407,7 @@ type ContourDeployment struct {
 
 // ContourDeploymentList contains a list of Contour Deployment resources.
 type ContourDeploymentList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ContourDeployment `json:"items"`
+	meta_v1.TypeMeta `json:",inline"`
+	meta_v1.ListMeta `json:"metadata,omitempty"`
+	Items            []ContourDeployment `json:"items"`
 }
