@@ -27,12 +27,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/ptr"
 
-	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
-	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
+	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
+	contour_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/annotation"
 	"github.com/projectcontour/contour/internal/k8s"
-	"github.com/projectcontour/contour/internal/ref"
 	"github.com/projectcontour/contour/internal/status"
 	"github.com/projectcontour/contour/internal/timeout"
 )
@@ -41,9 +41,9 @@ import (
 const defaultMaxRequestBytes uint32 = 1024
 
 // defaultExtensionRef populates the unset fields in ref with default values.
-func defaultExtensionRef(ref contour_api_v1.ExtensionServiceReference) contour_api_v1.ExtensionServiceReference {
+func defaultExtensionRef(ref contour_v1.ExtensionServiceReference) contour_v1.ExtensionServiceReference {
 	if ref.APIVersion == "" {
-		ref.APIVersion = contour_api_v1alpha1.GroupVersion.String()
+		ref.APIVersion = contour_v1alpha1.GroupVersion.String()
 	}
 
 	return ref
@@ -81,7 +81,7 @@ type HTTPProxyProcessor struct {
 	// When this is used, Happy Eyeballs will be enabled for upstream connections.
 	// Refer to Happy Eyeballs Support for more information.
 	// Note: This only applies to externalName clusters.
-	DNSLookupFamily contour_api_v1alpha1.ClusterDNSFamilyType
+	DNSLookupFamily contour_v1alpha1.ClusterDNSFamilyType
 
 	// ClientCertificate is the optional identifier of the TLS secret containing client certificate and
 	// private key to be used when establishing TLS connection to upstream cluster.
@@ -94,7 +94,7 @@ type HTTPProxyProcessor struct {
 	ResponseHeadersPolicy *HeadersPolicy
 
 	// GlobalExternalAuthorization defines how requests will be authorized.
-	GlobalExternalAuthorization *contour_api_v1.AuthorizationServer
+	GlobalExternalAuthorization *contour_v1.AuthorizationServer
 
 	// ConnectTimeout defines how long the proxy should wait when establishing connection to upstream service.
 	ConnectTimeout time.Duration
@@ -106,7 +106,7 @@ type HTTPProxyProcessor struct {
 	PerConnectionBufferLimitBytes *uint32
 
 	// GlobalRateLimitService defines Envoy's Global RateLimit Service configuration.
-	GlobalRateLimitService *contour_api_v1alpha1.RateLimitServiceConfig
+	GlobalRateLimitService *contour_v1alpha1.RateLimitServiceConfig
 
 	// SetSourceMetadataOnRoutes defines whether to set the Kind,
 	// Namespace and Name fields on generated DAG routes. This is
@@ -114,8 +114,10 @@ type HTTPProxyProcessor struct {
 	// without requiring all existing test cases to change.
 	SetSourceMetadataOnRoutes bool
 
+	// GlobalExternalProcessor defines how requests/responses will be operatred
+	GlobalExternalProcessor *contour_v1.ExternalProcessor
 	// GlobalCircuitBreakerDefaults defines global circuit breaker defaults.
-	GlobalCircuitBreakerDefaults *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
+	GlobalCircuitBreakerDefaults *contour_v1alpha1.GlobalCircuitBreakerDefaults
 
 	// UpstreamTLS defines the TLS settings like min/max version
 	// and cipher suites for upstream connections.
@@ -124,7 +126,7 @@ type HTTPProxyProcessor struct {
 	EnableStatPrefix bool
 
 	// GlobalOutlierDetection defines route-service's Global Outlier Detection configuration.
-	GlobalOutlierDetection *contour_api_v1.OutlierDetection
+	GlobalOutlierDetection *contour_v1.OutlierDetection
 }
 
 // Run translates HTTPProxies into DAG objects and
@@ -149,7 +151,7 @@ func (p *HTTPProxyProcessor) Run(dag *DAG, source *KubernetesCache) {
 		proxy, ok := p.source.httpproxies[meta]
 		if ok {
 			pa, commit := p.dag.StatusCache.ProxyAccessor(proxy)
-			pa.ConditionFor(status.ValidCondition).AddError(contour_api_v1.ConditionTypeOrphanedError,
+			pa.ConditionFor(status.ValidCondition).AddError(contour_v1.ConditionTypeOrphanedError,
 				"Orphaned",
 				"this HTTPProxy is not part of a delegation chain from a root HTTPProxy")
 			commit()
@@ -157,7 +159,7 @@ func (p *HTTPProxyProcessor) Run(dag *DAG, source *KubernetesCache) {
 	}
 }
 
-func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
+func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_v1.HTTPProxy) {
 	pa, commit := p.dag.StatusCache.ProxyAccessor(proxy)
 	validCond := pa.ConditionFor(status.ValidCondition)
 
@@ -173,7 +175,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 	host := proxy.Spec.VirtualHost.Fqdn
 	if isBlank(host) {
-		validCond.AddError(contour_api_v1.ConditionTypeVirtualHostError, "FQDNNotSpecified",
+		validCond.AddError(contour_v1.ConditionTypeVirtualHostError, "FQDNNotSpecified",
 			"Spec.VirtualHost.Fqdn must be specified")
 		return
 	}
@@ -183,33 +185,63 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 	// Ensure root httpproxy lives in allowed namespace.
 	// This check must be after we can determine the vhost in order to be able to calculate metrics correctly.
 	if !p.rootAllowed(proxy.Namespace) {
-		validCond.AddError(contour_api_v1.ConditionTypeRootNamespaceError, "RootProxyNotAllowedInNamespace",
+		validCond.AddError(contour_v1.ConditionTypeRootNamespaceError, "RootProxyNotAllowedInNamespace",
 			"root HTTPProxy cannot be defined in this namespace")
 		return
 	}
 
 	if len(proxy.Spec.Routes) == 0 && len(proxy.Spec.Includes) == 0 && proxy.Spec.TCPProxy == nil {
-		validCond.AddError(contour_api_v1.ConditionTypeSpecError, "NothingDefined",
+		validCond.AddError(contour_v1.ConditionTypeSpecError, "NothingDefined",
 			"HTTPProxy.Spec must have at least one Route, Include, or a TCPProxy")
 		return
 	}
 
 	if len(proxy.Spec.VirtualHost.JWTProviders) > 0 {
 		if proxy.Spec.VirtualHost.TLS == nil || len(proxy.Spec.VirtualHost.TLS.SecretName) == 0 {
-			validCond.AddError(contour_api_v1.ConditionTypeJWTVerificationError, "JWTVerificationNotPermitted",
+			validCond.AddError(contour_v1.ConditionTypeJWTVerificationError, "JWTVerificationNotPermitted",
 				"Spec.VirtualHost.JWTProviders can only be defined for root HTTPProxies that terminate TLS")
 			return
 		}
 	}
 
 	if proxy.Spec.VirtualHost.TLS == nil && proxy.Spec.VirtualHost.Authorization != nil && len(proxy.Spec.VirtualHost.Authorization.ExtensionServiceRef.Name) > 0 {
-		validCond.AddError(contour_api_v1.ConditionTypeAuthError, "AuthNotPermitted",
+		validCond.AddError(contour_v1.ConditionTypeAuthError, "AuthNotPermitted",
 			"Spec.VirtualHost.Authorization.ExtensionServiceRef can only be defined for root HTTPProxies that terminate TLS")
 		return
 	}
 
+	extProc := proxy.Spec.VirtualHost.ExternalProcessor
+	if extProc != nil {
+		m := map[contour_v1.ExtensionServiceReference]struct{}{}
+		for _, ep := range extProc.Processors {
+			objKey := ep.GRPCService.ExtensionServiceRef
+			if _, ok := m[objKey]; ok {
+				validCond.AddError(contour_v1.ConditionTypeExtProcError, "VirtualHostExtProcNotPermitted",
+					fmt.Sprintf("Spec.VirtualHost.ExternalProcessor.Processors is invalid: duplicate name %s/%s", objKey.Namespace, objKey.Name))
+				return
+			}
+			m[ep.GRPCService.ExtensionServiceRef] = struct{}{}
+		}
+
+		if proxy.Spec.VirtualHost.TLS == nil {
+			for _, ep := range extProc.Processors {
+				if len(ep.GRPCService.ExtensionServiceRef.Name) > 0 {
+					validCond.AddError(contour_v1.ConditionTypeExtProcError, "VirtualHostExtProcNotPermitted",
+						"Spec.VirtualHost.ExternalProcessor.Processors[*].ExtensionServiceRef can only be defined for root HTTPProxies that terminate TLS")
+					return
+				}
+			}
+		}
+		if extProc.ExtProcPolicy != nil && extProc.ExtProcPolicy.Overrides != nil {
+			validCond.AddError(contour_v1.ConditionTypeExtProcError, "VirtualHostExtProcNotPermitted",
+				"Spec.VirtualHost.ExternalProcessor.ExtProcPolicy.Overrides cannot be defined.")
+			return
+		}
+
+	}
+
 	if len(proxy.Spec.VirtualHost.IPAllowFilterPolicy) > 0 && len(proxy.Spec.VirtualHost.IPDenyFilterPolicy) > 0 {
-		validCond.AddError(contour_api_v1.ConditionTypeIPFilterError, "IncompatibleIPAddressFilters",
+		validCond.AddError(contour_v1.ConditionTypeIPFilterError, "IncompatibleIPAddressFilters",
 			"Spec.VirtualHost.IPAllowFilterPolicy and Spec.VirtualHost.IPDepnyFilterPolicy cannot both be defined.")
 		return
 	}
@@ -217,23 +249,23 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 	var tlsEnabled bool
 	if tls := proxy.Spec.VirtualHost.TLS; tls != nil {
 		if tls.Passthrough && tls.EnableFallbackCertificate {
-			validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+			validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
 				"Spec.VirtualHost.TLS: both Passthrough and enableFallbackCertificate were specified")
 		}
 		if !isBlank(tls.SecretName) && tls.Passthrough {
-			validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSConfigNotValid",
+			validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSConfigNotValid",
 				"Spec.VirtualHost.TLS: both Passthrough and SecretName were specified")
 			return
 		}
 
 		if isBlank(tls.SecretName) && !tls.Passthrough {
-			validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSConfigNotValid",
+			validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSConfigNotValid",
 				"Spec.VirtualHost.TLS: neither Passthrough nor SecretName were specified")
 			return
 		}
 
 		if tls.Passthrough && tls.ClientValidation != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+			validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
 				"Spec.VirtualHost.TLS passthrough cannot be combined with tls.clientValidation")
 			return
 		}
@@ -246,10 +278,10 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 			sec, err := p.source.LookupTLSSecret(secretName, proxy.Namespace)
 			if err != nil {
 				if _, ok := err.(DelegationNotPermittedError); ok {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "DelegationNotPermitted",
+					validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted",
 						"Spec.VirtualHost.TLS Secret %q certificate delegation not permitted", tls.SecretName)
 				} else {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "SecretNotValid",
+					validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "SecretNotValid",
 						"Spec.VirtualHost.TLS Secret %q is invalid: %s", tls.SecretName, err)
 				}
 				return
@@ -257,7 +289,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 			listener, err := p.dag.GetSingleListener("https")
 			if err != nil {
-				validCond.AddError(contour_api_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
+				validCond.AddError(contour_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
 				return
 			}
 
@@ -267,7 +299,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 			// default to a maximum TLS version of 1.3 if it's not specified
 			maxTLSVer := annotation.TLSVersion(tls.MaximumProtocolVersion, "1.3")
 			if maxTLSVer < minTLSVer {
-				validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSConfigNotValid",
+				validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSConfigNotValid",
 					"Spec.Virtualhost.TLS the minimum protocol version is greater than the maximum protocol version")
 				return
 			}
@@ -279,7 +311,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 			// Check if FallbackCertificate && ClientValidation are both enabled in the same vhost
 			if tls.EnableFallbackCertificate && tls.ClientValidation != nil {
-				validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+				validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
 					"Spec.Virtualhost.TLS fallback & client validation are incompatible")
 				return
 			}
@@ -290,15 +322,22 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 			// same routes installed on multiple managers with
 			// inconsistent authorization settings.
 			if tls.EnableFallbackCertificate && proxy.Spec.VirtualHost.AuthorizationConfigured() {
-				validCond.AddError(contour_api_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+				validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
 					"Spec.Virtualhost.TLS fallback & client authorization are incompatible")
+				return
+			}
+
+			// same as above
+			if tls.EnableFallbackCertificate && proxy.Spec.VirtualHost.ExtProcConfigured() {
+				validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+					"Spec.Virtualhost.TLS fallback & external processing are incompatible")
 				return
 			}
 
 			// If FallbackCertificate is enabled, but no cert passed, set error
 			if tls.EnableFallbackCertificate {
 				if p.FallbackCertificate == nil {
-					validCond.AddError(contour_api_v1.ConditionTypeTLSError, "FallbackNotPresent",
+					validCond.AddError(contour_v1.ConditionTypeTLSError, "FallbackNotPresent",
 						"Spec.Virtualhost.TLS enabled fallback but the fallback Certificate Secret is not configured in Contour configuration file")
 					return
 				}
@@ -306,10 +345,10 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				sec, err = p.source.LookupTLSSecret(*p.FallbackCertificate, proxy.Namespace)
 				if err != nil {
 					if _, ok := err.(DelegationNotPermittedError); ok {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "FallbackNotDelegated",
+						validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "FallbackNotDelegated",
 							"Spec.VirtualHost.TLS Secret %q is not configured for certificate delegation", p.FallbackCertificate)
 					} else {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "FallbackNotValid",
+						validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "FallbackNotValid",
 							"Spec.Virtualhost.TLS Secret %q fallback certificate is invalid: %s", p.FallbackCertificate, err)
 					}
 					return
@@ -338,18 +377,20 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 					cacert, err := p.source.LookupCASecret(secretName, proxy.Namespace)
 					if err != nil {
 						if _, ok := err.(DelegationNotPermittedError); ok {
-							validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "DelegationNotPermitted",
+							validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted",
 								"Spec.VirtualHost.TLS CA Secret %q is invalid: %s", tls.ClientValidation.CACertificate, err)
 						} else {
 							// PeerValidationContext is requested, but cert is missing or not configured.
-							validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "ClientValidationInvalid",
+							validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "ClientValidationInvalid",
 								"Spec.VirtualHost.TLS client validation is invalid: invalid CA Secret %q: %s", secretName, err)
 						}
 						return
 					}
-					dv.CACertificate = cacert
+					dv.CACertificates = []*Secret{
+						cacert,
+					}
 				} else if !tls.ClientValidation.SkipClientCertValidation {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "ClientValidationInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "ClientValidationInvalid",
 						"Spec.VirtualHost.TLS client validation is invalid: CA Secret must be specified")
 				}
 				if tls.ClientValidation.CertificateRevocationList != "" {
@@ -357,11 +398,11 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 					crl, err := p.source.LookupCRLSecret(secretName, proxy.Namespace)
 					if err != nil {
 						if _, ok := err.(DelegationNotPermittedError); ok {
-							validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "DelegationNotPermitted",
+							validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted",
 								"Spec.VirtualHost.TLS CRL Secret %q is invalid: %s", tls.ClientValidation.CertificateRevocationList, err)
 						} else {
 							// CRL is missing or not configured.
-							validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "ClientValidationInvalid",
+							validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "ClientValidationInvalid",
 								"Spec.VirtualHost.TLS client validation is invalid: invalid CRL Secret %q: %s", secretName, err)
 						}
 						return
@@ -376,10 +417,14 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				return
 			}
 
+			if !p.computeSecureVirtualHostExtProc(validCond, proxy, svhost) {
+				return
+			}
+
 			providerNames := sets.NewString()
 			for _, jwtProvider := range proxy.Spec.VirtualHost.JWTProviders {
 				if providerNames.Has(jwtProvider.Name) {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "DuplicateProviderName",
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "DuplicateProviderName",
 						"Spec.VirtualHost.JWTProviders is invalid: duplicate name %s", jwtProvider.Name)
 					return
 				}
@@ -387,7 +432,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 				if jwtProvider.Default {
 					if len(defaultJWTProvider) > 0 {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "MultipleDefaultProvidersSpecified",
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "MultipleDefaultProvidersSpecified",
 							"Spec.VirtualHost.JWTProviders is invalid: at most one provider can be set as the default")
 						return
 					}
@@ -396,13 +441,13 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 				jwksURL, err := url.Parse(jwtProvider.RemoteJWKS.URI)
 				if err != nil {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSURIInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSURIInvalid",
 						"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI is invalid: %s", err)
 					return
 				}
 
 				if jwksURL.Scheme != "http" && jwksURL.Scheme != "https" {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSSchemeInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSSchemeInvalid",
 						"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has invalid scheme %q, must be http or https", jwksURL.Scheme)
 					return
 				}
@@ -411,7 +456,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 				if jwtProvider.RemoteJWKS.UpstreamValidation != nil {
 					if jwksURL.Scheme == "http" {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
 							"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation must not be specified when URI scheme is http.")
 						return
 					}
@@ -420,10 +465,10 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 					uv, err = p.source.LookupUpstreamValidation(jwtProvider.RemoteJWKS.UpstreamValidation, caCertNamespacedName, proxy.Namespace)
 					if err != nil {
 						if _, ok := err.(DelegationNotPermittedError); ok {
-							validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCACertificateNotDelegated",
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCACertificateNotDelegated",
 								"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation.CACertificate Secret %q is not configured for certificate delegation", caCertNamespacedName)
 						} else {
-							validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
 								"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation is invalid: %s", err)
 						}
 						return
@@ -434,7 +479,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				if len(jwtProvider.RemoteJWKS.Timeout) > 0 {
 					res, err := time.ParseDuration(jwtProvider.RemoteJWKS.Timeout)
 					if err != nil {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSTimeoutInvalid",
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSTimeoutInvalid",
 							"Spec.VirtualHost.JWTProviders.RemoteJWKS.Timeout is invalid: %s", err)
 						return
 					}
@@ -446,7 +491,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				if len(jwtProvider.RemoteJWKS.CacheDuration) > 0 {
 					res, err := time.ParseDuration(jwtProvider.RemoteJWKS.CacheDuration)
 					if err != nil {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCacheDurationInvalid",
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCacheDurationInvalid",
 							"Spec.VirtualHost.JWTProviders.RemoteJWKS.CacheDuration is invalid: %s", err)
 						return
 					}
@@ -464,7 +509,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 						// This theoretically shouldn't be possible as jwksURL.Port() will
 						// only return a value if it's numeric, but we need to convert to
 						// int anyway so handle the error.
-						validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSPortInvalid",
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSPortInvalid",
 							"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has an invalid port: %s", err)
 						return
 					}
@@ -484,7 +529,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				case "":
 					dnsLookupFamily = string(p.DNSLookupFamily)
 				default:
-					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "RemoteJWKSDNSLookupFamilyInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSDNSLookupFamilyInvalid",
 						"Spec.VirtualHost.JWTProviders.RemoteJWKS.DNSLookupFamily has an invalid value %q, must be auto, all, v4 or v6", jwtProvider.RemoteJWKS.DNSLookupFamily)
 					return
 				}
@@ -514,7 +559,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 	if proxy.Spec.TCPProxy != nil {
 		if !tlsEnabled {
-			validCond.AddError(contour_api_v1.ConditionTypeTCPProxyError, "TLSMustBeConfigured",
+			validCond.AddError(contour_v1.ConditionTypeTCPProxyError, "TLSMustBeConfigured",
 				"Spec.TCPProxy requires that either Spec.TLS.Passthrough or Spec.TLS.SecretName be set")
 			return
 		}
@@ -527,7 +572,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 	listener, err := p.dag.GetSingleListener("http")
 	if err != nil {
-		validCond.AddError(contour_api_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
+		validCond.AddError(contour_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
 		return
 	}
 
@@ -535,7 +580,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 	cp, err := toCORSPolicy(proxy.Spec.VirtualHost.CORSPolicy)
 	if err != nil {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeCORSError, "PolicyDidNotParse",
+		validCond.AddErrorf(contour_v1.ConditionTypeCORSError, "PolicyDidNotParse",
 			"Spec.VirtualHost.CORSPolicy: %s", err)
 		return
 	}
@@ -548,12 +593,16 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 	}
 
 	if p.GlobalExternalAuthorization != nil && !proxy.Spec.VirtualHost.DisableAuthorization() {
-		p.computeVirtualHostAuthorization(p.GlobalExternalAuthorization, validCond, proxy)
+		_ = p.computeVirtualHostAuthorization(p.GlobalExternalAuthorization, validCond, proxy)
+	}
+
+	if p.GlobalExternalProcessor != nil && !proxy.Spec.VirtualHost.DisableExtProc() {
+		_ = p.computeVirtualHostExtProcs(p.GlobalExternalProcessor, validCond, proxy)
 	}
 
 	insecure.IPFilterAllow, insecure.IPFilterRules, err = toIPFilterRules(proxy.Spec.VirtualHost.IPAllowFilterPolicy, proxy.Spec.VirtualHost.IPDenyFilterPolicy, validCond)
 	if err != nil {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeIPFilterError, "IPFilterPolicyNotValid",
+		validCond.AddErrorf(contour_v1.ConditionTypeIPFilterError, "IPFilterPolicyNotValid",
 			"Spec.VirtualHost.IPAllowFilterPolicy or Spec.VirtualHost.IPDenyFilterPolicy is invalid: %s", err)
 		return
 	}
@@ -565,7 +614,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 	if tlsEnabled && proxy.Spec.TCPProxy == nil {
 		listener, err := p.dag.GetSingleListener("https")
 		if err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
+			validCond.AddError(contour_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
 			return
 		}
 
@@ -579,7 +628,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 
 		secure.IPFilterAllow, secure.IPFilterRules, err = toIPFilterRules(proxy.Spec.VirtualHost.IPAllowFilterPolicy, proxy.Spec.VirtualHost.IPDenyFilterPolicy, validCond)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIPFilterError, "IPFilterPolicyNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeIPFilterError, "IPFilterPolicyNotValid",
 				"Spec.VirtualHost.IPAllowFilterPolicy or Spec.VirtualHost.IPDenyFilterPolicy is invalid: %s", err)
 			return
 		}
@@ -595,7 +644,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 					continue
 				}
 
-				validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "JWTProviderNotDefined",
+				validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "JWTProviderNotDefined",
 					"Route references an undefined JWT provider %q", route.JWTProvider)
 				return
 			}
@@ -612,7 +661,7 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_api_v1.HTTPProxy) {
 				}
 
 				if !found {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeJWTVerificationError, "JWTProviderNotDefined",
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "JWTProviderNotDefined",
 						"Route references an undefined JWT provider %q", route.JWTProvider)
 					return
 				}
@@ -632,7 +681,7 @@ func addRoutes(vhost vhost, routes []*Route) {
 	}
 }
 
-func (p *HTTPProxyProcessor) addStatusBadGatewayRoute(routes []*Route, conds []contour_api_v1.MatchCondition, proxy *contour_api_v1.HTTPProxy) []*Route {
+func (p *HTTPProxyProcessor) addStatusBadGatewayRoute(routes []*Route, conds []contour_v1.MatchCondition, proxy *contour_v1.HTTPProxy) []*Route {
 	if len(conds) > 0 {
 		route := &Route{
 			PathMatchCondition:        mergePathMatchConditions(conds),
@@ -648,7 +697,7 @@ func (p *HTTPProxyProcessor) addStatusBadGatewayRoute(routes []*Route, conds []c
 		}
 
 		if p.EnableStatPrefix {
-			route.StatPrefix = ref.To(fmt.Sprintf("%s_%s", proxy.Namespace, proxy.Name))
+			route.StatPrefix = ptr.To(fmt.Sprintf("%s_%s", proxy.Namespace, proxy.Name))
 		}
 
 		routes = append(routes, route)
@@ -657,11 +706,11 @@ func (p *HTTPProxyProcessor) addStatusBadGatewayRoute(routes []*Route, conds []c
 }
 
 func (p *HTTPProxyProcessor) computeRoutes(
-	validCond *contour_api_v1.DetailedCondition,
-	rootProxy *contour_api_v1.HTTPProxy,
-	proxy *contour_api_v1.HTTPProxy,
-	conditions []contour_api_v1.MatchCondition,
-	visited []*contour_api_v1.HTTPProxy,
+	validCond *contour_v1.DetailedCondition,
+	rootProxy *contour_v1.HTTPProxy,
+	proxy *contour_v1.HTTPProxy,
+	conditions []contour_v1.MatchCondition,
+	visited []*contour_v1.HTTPProxy,
 	enforceTLS bool,
 	defaultJWTProvider string,
 ) []*Route {
@@ -673,7 +722,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		}
 		if v.Name == proxy.Name && v.Namespace == proxy.Namespace {
 			path = append(path, fmt.Sprintf("%s/%s", proxy.Namespace, proxy.Name))
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIncludeError, "IncludeCreatesCycle",
+			validCond.AddErrorf(contour_v1.ConditionTypeIncludeError, "IncludeCreatesCycle",
 				"include creates an include cycle: %s", strings.Join(path, " -> "))
 			return nil
 		}
@@ -691,39 +740,39 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		}
 
 		if err := includeMatchConditionsValid(include.Conditions); err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIncludeError, "PathMatchConditionsNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeIncludeError, "PathMatchConditionsNotValid",
 				"include: %s", err)
 			continue
 		}
 
 		if err := pathMatchConditionsValid(include.Conditions); err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIncludeError, "PathMatchConditionsNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeIncludeError, "PathMatchConditionsNotValid",
 				"include: %s", err)
 			continue
 		}
 
 		if err := headerMatchConditionsValid(include.Conditions); err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "HeaderMatchConditionsNotValid",
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "HeaderMatchConditionsNotValid",
 				err.Error())
 			continue
 		}
 
 		if err := queryParameterMatchConditionsValid(include.Conditions); err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "QueryParameterMatchConditionsNotValid",
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "QueryParameterMatchConditionsNotValid",
 				err.Error())
 			continue
 		}
 
 		// Check to see if we have any duplicate include conditions.
 		if includeMatchConditionsIdentical(include.Conditions, seenConds) {
-			validCond.AddError(contour_api_v1.ConditionTypeIncludeError, "DuplicateMatchConditions",
+			validCond.AddError(contour_v1.ConditionTypeIncludeError, "DuplicateMatchConditions",
 				"duplicate conditions defined on an include")
 			continue
 		}
 
 		includedProxy, ok := p.source.httpproxies[types.NamespacedName{Name: include.Name, Namespace: namespace}]
 		if !ok {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIncludeError, "IncludeNotFound",
+			validCond.AddErrorf(contour_v1.ConditionTypeIncludeError, "IncludeNotFound",
 				"include %s/%s not found", namespace, include.Name)
 
 			// Set 502 response when include was not found but include condition was valid.
@@ -732,7 +781,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		}
 
 		if includedProxy.Spec.VirtualHost != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIncludeError, "RootIncludesRoot",
+			validCond.AddErrorf(contour_v1.ConditionTypeIncludeError, "RootIncludesRoot",
 				"root httpproxy cannot include another root httpproxy (%s/%s)", includedProxy.Namespace, includedProxy.Name)
 			// Set 502 response if include references another root
 			routes = p.addStatusBadGatewayRoute(routes, include.Conditions, proxy)
@@ -754,12 +803,17 @@ func (p *HTTPProxyProcessor) computeRoutes(
 
 	for _, route := range proxy.Spec.Routes {
 		if err := routeActionCountValid(route); err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "RouteActionCountNotValid", err.Error())
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "RouteActionCountNotValid", err.Error())
+			return nil
+		}
+
+		if err := routeExtProcValid(route.ExtProcPolicy); err != nil {
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "RouteExtProcNotValid", err.Error())
 			return nil
 		}
 
 		if err := pathMatchConditionsValid(route.Conditions); err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "PathMatchConditionsNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "PathMatchConditionsNotValid",
 				"route: %s", err)
 			return nil
 		}
@@ -769,49 +823,49 @@ func (p *HTTPProxyProcessor) computeRoutes(
 
 		// Look for invalid header conditions on this route
 		if err := headerMatchConditionsValid(routeConditions); err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "HeaderMatchConditionsNotValid",
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "HeaderMatchConditionsNotValid",
 				err.Error())
 			return nil
 		}
 
 		// Look for invalid query parameter conditions on this route
 		if err := queryParameterMatchConditionsValid(routeConditions); err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeRouteError, "QueryParameterMatchConditionsNotValid",
+			validCond.AddError(contour_v1.ConditionTypeRouteError, "QueryParameterMatchConditionsNotValid",
 				err.Error())
 			return nil
 		}
 
 		reqHP, err := headersPolicyRoute(route.RequestHeadersPolicy, true /* allow Host */, dynamicHeaders)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "RequestHeadersPolicyInvalid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "RequestHeadersPolicyInvalid",
 				"%s on request headers", err)
 			return nil
 		}
 
 		respHP, err := headersPolicyRoute(route.ResponseHeadersPolicy, false /* disallow Host */, dynamicHeaders)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "ResponseHeaderPolicyInvalid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "ResponseHeaderPolicyInvalid",
 				"%s on response headers", err)
 			return nil
 		}
 
 		cookieRP, err := cookieRewritePolicies(route.CookieRewritePolicies)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "CookieRewritePoliciesInvalid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "CookieRewritePoliciesInvalid",
 				"%s on route cookie rewrite rules", err)
 			return nil
 		}
 
 		rtp, ctp, err := timeoutPolicy(route.TimeoutPolicy, p.ConnectTimeout)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "TimeoutPolicyNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "TimeoutPolicyNotValid",
 				"route.timeoutPolicy failed to parse: %s", err)
 			return nil
 		}
 
 		rlp, err := rateLimitPolicy(route.RateLimitPolicy)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "RateLimitPolicyNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "RateLimitPolicyNotValid",
 				"route.rateLimitPolicy is invalid: %s", err)
 			return nil
 		}
@@ -822,7 +876,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 
 		redirectPolicy, err := redirectRoutePolicy(route.RequestRedirectPolicy)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "RequestRedirectPolicy",
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "RequestRedirectPolicy",
 				"route.requestRedirectPolicy is invalid: %s", err)
 			return nil
 		}
@@ -857,7 +911,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		}
 
 		if p.EnableStatPrefix {
-			r.StatPrefix = ref.To(fmt.Sprintf("%s_%s", proxy.Namespace, proxy.Name))
+			r.StatPrefix = ptr.To(fmt.Sprintf("%s_%s", proxy.Namespace, proxy.Name))
 		}
 
 		// If the enclosing root proxy enabled authorization,
@@ -887,15 +941,42 @@ func (p *HTTPProxyProcessor) computeRoutes(
 			}
 		}
 
+		// If the enclosing root proxy enabled external processing,
+		// enable it on the route and propagate defaults
+		// downwards.
+		if rootProxy.Spec.VirtualHost.ExtProcConfigured() || p.GlobalExternalProcessor != nil {
+			// When the ext_proc filter(s) is added to a
+			// vhost, it is in enabled state, but we can
+			// disable it per route. We emulate disabling
+			// it at the vhost layer by defaulting the state
+			// from the root proxy.
+			disabled := rootProxy.Spec.VirtualHost.DisableExtProc()
+
+			// Take the default for enabling authorization
+			// from the virtual host. If this route has a
+			// policy, let that override.
+			if route.ExtProcPolicy != nil {
+				disabled = route.ExtProcPolicy.Disabled
+				if route.ExtProcPolicy.Overrides != nil {
+					overrides := toExtProcOverrides(route.ExtProcPolicy.Overrides, validCond, proxy.Namespace, p.dag.GetExtensionCluster)
+					if overrides == nil {
+						return nil
+					}
+					r.ExtProcOverrides = overrides
+				}
+			}
+			r.ExtProcDisabled = disabled
+		}
+
 		if len(route.GetPrefixReplacements()) > 0 {
 			if !r.HasPathPrefix() {
-				validCond.AddError(contour_api_v1.ConditionTypePrefixReplaceError, "MustHavePrefix",
+				validCond.AddError(contour_v1.ConditionTypePrefixReplaceError, "MustHavePrefix",
 					"cannot specify prefix replacements without a prefix condition")
 				return nil
 			}
 
 			if reason, err := prefixReplacementsAreValid(route.GetPrefixReplacements()); err != nil {
-				validCond.AddError(contour_api_v1.ConditionTypePrefixReplaceError, reason, err.Error())
+				validCond.AddError(contour_v1.ConditionTypePrefixReplaceError, reason, err.Error())
 				return nil
 			}
 
@@ -930,13 +1011,13 @@ func (p *HTTPProxyProcessor) computeRoutes(
 
 		healthPolicy, err := httpHealthCheckPolicy(route.HealthCheckPolicy)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "HealthCheckPolicyInvalid", err.Error())
+			validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "HealthCheckPolicyInvalid", err.Error())
 			return nil
 		}
 
 		for _, service := range route.Services {
 			if service.Port < 1 || service.Port > 65535 {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "ServicePortInvalid",
+				validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "ServicePortInvalid",
 					"service %q: port must be in the range 1-65535", service.Name)
 				return nil
 			}
@@ -951,7 +1032,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 			m := types.NamespacedName{Name: service.Name, Namespace: proxy.Namespace}
 			s, err := p.dag.EnsureService(m, service.Port, healthPort, p.source, p.EnableExternalNameService)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "ServiceUnresolvedReference",
+				validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "ServiceUnresolvedReference",
 					"Spec.Routes unresolved service reference: %s", err)
 				continue
 			}
@@ -960,7 +1041,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 			// Determine the protocol to use to speak to this Cluster.
 			protocol, err := getProtocol(service, s)
 			if err != nil {
-				validCond.AddError(contour_api_v1.ConditionTypeServiceError, "UnsupportedProtocol", err.Error())
+				validCond.AddError(contour_v1.ConditionTypeServiceError, "UnsupportedProtocol", err.Error())
 				return nil
 			}
 
@@ -971,10 +1052,10 @@ func (p *HTTPProxyProcessor) computeRoutes(
 				uv, err = p.source.LookupUpstreamValidation(service.UpstreamValidation, caCertNamespacedName, proxy.Namespace)
 				if err != nil {
 					if _, ok := err.(DelegationNotPermittedError); ok {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "CACertificateNotDelegated",
+						validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "CACertificateNotDelegated",
 							"service.UpstreamValidation.CACertificate Secret %q is not configured for certificate delegation", caCertNamespacedName)
 					} else {
-						validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "TLSUpstreamValidation",
+						validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "TLSUpstreamValidation",
 							"Service [%s:%d] TLS upstream validation policy error: %s", service.Name, service.Port, err)
 					}
 					return nil
@@ -986,27 +1067,27 @@ func (p *HTTPProxyProcessor) computeRoutes(
 
 			reqHP, err := headersPolicyService(p.RequestHeadersPolicy, service.RequestHeadersPolicy, true, dynamicHeaders)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "RequestHeadersPolicyInvalid",
+				validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "RequestHeadersPolicyInvalid",
 					"%s on request headers", err)
 				return nil
 			}
 			respHP, err := headersPolicyService(p.ResponseHeadersPolicy, service.ResponseHeadersPolicy, false, dynamicHeaders)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "ResponseHeadersPolicyInvalid",
+				validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "ResponseHeadersPolicyInvalid",
 					"%s on response headers", err)
 				return nil
 			}
 
 			cookieRP, err := cookieRewritePolicies(service.CookieRewritePolicies)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeRouteError, "CookieRewritePoliciesInvalid",
+				validCond.AddErrorf(contour_v1.ConditionTypeRouteError, "CookieRewritePoliciesInvalid",
 					"%s on service cookie rewrite rules", err)
 				return nil
 			}
 
 			outlierDetection, err := outlierDetectionPolicy(p.GlobalOutlierDetection, service.OutlierDetection)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeOutlierDetectionError, "OutlierDetectionInvalid",
+				validCond.AddErrorf(contour_v1.ConditionTypeOutlierDetectionError, "OutlierDetectionInvalid",
 					"%s on outlier detection", err)
 				return nil
 			}
@@ -1016,7 +1097,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 				// Since the client certificate is configured by admin, explicit delegation is not required.
 				clientCertSecret, err = p.source.LookupTLSSecretInsecure(*p.ClientCertificate)
 				if err != nil {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeTLSError, "SecretNotValid",
+					validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "SecretNotValid",
 						"tls.envoy-client-certificate Secret %q is invalid: %s", p.ClientCertificate, err)
 					return nil
 				}
@@ -1026,14 +1107,14 @@ func (p *HTTPProxyProcessor) computeRoutes(
 			if service.SlowStartPolicy != nil {
 				// Currently Envoy implements slow start only for RoundRobin and WeightedLeastRequest LB strategies.
 				if lbPolicy != "" && lbPolicy != LoadBalancerPolicyRoundRobin && lbPolicy != LoadBalancerPolicyWeightedLeastRequest {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "SlowStartInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "SlowStartInvalid",
 						"slow start is only supported with RoundRobin or WeightedLeastRequest load balancer strategy")
 					return nil
 				}
 
 				slowStart, err = slowStartConfig(service.SlowStartPolicy)
 				if err != nil {
-					validCond.AddErrorf(contour_api_v1.ConditionTypeServiceError, "SlowStartInvalid",
+					validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "SlowStartInvalid",
 						"%s on slow start", err)
 					return nil
 				}
@@ -1060,7 +1141,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 				OutlierDetectionPolicy:        outlierDetection,
 			}
 			if service.Mirror && len(r.MirrorPolicies) > 0 {
-				validCond.AddError(contour_api_v1.ConditionTypeServiceError, "OnlyOneMirror",
+				validCond.AddError(contour_v1.ConditionTypeServiceError, "OnlyOneMirror",
 					"only one service per route may be nominated as mirror")
 				return nil
 			}
@@ -1099,7 +1180,7 @@ func (p *HTTPProxyProcessor) computeRoutes(
 		jwt := route.JWTVerificationPolicy
 		switch {
 		case jwt != nil && len(route.JWTVerificationPolicy.Require) > 0 && route.JWTVerificationPolicy.Disabled:
-			validCond.AddError(contour_api_v1.ConditionTypeJWTVerificationError, "InvalidJWTVerificationPolicy",
+			validCond.AddError(contour_v1.ConditionTypeJWTVerificationError, "InvalidJWTVerificationPolicy",
 				"route's JWT verification policy cannot specify both require and disabled")
 			return nil
 		case jwt != nil && len(route.JWTVerificationPolicy.Require) > 0:
@@ -1123,13 +1204,44 @@ func (p *HTTPProxyProcessor) computeRoutes(
 	return routes
 }
 
+func toExtProcOverrides(
+	override *contour_v1.ExtProcOverride,
+	validCond *contour_v1.DetailedCondition,
+	defaultNamespace string,
+	extClusterGetter func(name string) *ExtensionCluster,
+) *ExtProcOverrides {
+	ok, extSvc := validateExtensionService(
+		defaultExtensionRef(override.GRPCService.ExtensionServiceRef),
+		validCond,
+		defaultNamespace,
+		contour_v1.ConditionTypeExtProcError,
+		extClusterGetter)
+	if !ok {
+		return nil
+	}
+	ok, respTimeout := determineExtensionServiceTimeout(
+		contour_v1.ConditionTypeExtProcError,
+		override.GRPCService.ResponseTimeout,
+		validCond,
+		extSvc)
+	if !ok {
+		return nil
+	}
+
+	return &ExtProcOverrides{
+		ProcessingMode:  override.ProcessingMode,
+		ExtProcService:  extSvc,
+		ResponseTimeout: respTimeout,
+	}
+}
+
 // toIPFilterRules converts ip filter settings from the api into the
 // dag representation
-func toIPFilterRules(allowPolicy, denyPolicy []contour_api_v1.IPFilterPolicy, validCond *contour_api_v1.DetailedCondition) (allow bool, filters []IPFilterRule, err error) {
-	var ipPolicies []contour_api_v1.IPFilterPolicy
+func toIPFilterRules(allowPolicy, denyPolicy []contour_v1.IPFilterPolicy, validCond *contour_v1.DetailedCondition) (allow bool, filters []IPFilterRule, err error) {
+	var ipPolicies []contour_v1.IPFilterPolicy
 	switch {
 	case len(allowPolicy) > 0 && len(denyPolicy) > 0:
-		validCond.AddError(contour_api_v1.ConditionTypeIPFilterError, "IncompatibleIPAddressFilters",
+		validCond.AddError(contour_v1.ConditionTypeIPFilterError, "IncompatibleIPAddressFilters",
 			"cannot specify both `ipAllowPolicy` and `ipDenyPolicy`")
 		err = fmt.Errorf("invalid ip filter")
 		return
@@ -1157,12 +1269,12 @@ func toIPFilterRules(allowPolicy, denyPolicy []contour_api_v1.IPFilterPolicy, va
 		var cidr *net.IPNet
 		_, cidr, err = net.ParseCIDR(unparsedCIDR)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeIPFilterError, "InvalidCIDR",
+			validCond.AddErrorf(contour_v1.ConditionTypeIPFilterError, "InvalidCIDR",
 				"%s failed to parse: %s", p.CIDR, err)
 			continue
 		}
 		filters = append(filters, IPFilterRule{
-			Remote: p.Source == contour_api_v1.IPFilterSourceRemote,
+			Remote: p.Source == contour_v1.IPFilterSourceRemote,
 			CIDR:   *cidr,
 		})
 	}
@@ -1177,7 +1289,7 @@ func toIPFilterRules(allowPolicy, denyPolicy []contour_api_v1.IPFilterPolicy, va
 // following the chain of spec.tcpproxy.include references. It returns true if processing
 // was successful, otherwise false if an error was encountered. The details of the error
 // will be recorded on the status of the relevant HTTPProxy object,
-func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.DetailedCondition, httpproxy *contour_api_v1.HTTPProxy, visited []*contour_api_v1.HTTPProxy, host string) bool {
+func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_v1.DetailedCondition, httpproxy *contour_v1.HTTPProxy, visited []*contour_v1.HTTPProxy, host string) bool {
 	tcpproxy := httpproxy.Spec.TCPProxy
 	if tcpproxy == nil {
 		// nothing to do
@@ -1194,7 +1306,7 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 	}
 
 	if len(tcpproxy.Services) > 0 && tcpProxyInclude != nil {
-		validCond.AddError(contour_api_v1.ConditionTypeTCPProxyError, "NoServicesAndInclude",
+		validCond.AddError(contour_v1.ConditionTypeTCPProxyError, "NoServicesAndInclude",
 			"cannot specify services and include in the same httpproxy")
 		return false
 	}
@@ -1202,7 +1314,7 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 	lbPolicy := loadBalancerPolicy(tcpproxy.LoadBalancerPolicy)
 	switch lbPolicy {
 	case LoadBalancerPolicyCookie, LoadBalancerPolicyRequestHash:
-		validCond.AddWarningf(contour_api_v1.ConditionTypeTCPProxyError, "IgnoredField",
+		validCond.AddWarningf(contour_v1.ConditionTypeTCPProxyError, "IgnoredField",
 			"ignoring field %q; %s load balancer policy is not supported for TCPProxies",
 			"Spec.TCPProxy.LoadBalancerPolicy", lbPolicy)
 		// Reset load balancer policy to ensure the default.
@@ -1223,7 +1335,7 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 			m := types.NamespacedName{Name: service.Name, Namespace: httpproxy.Namespace}
 			s, err := p.dag.EnsureService(m, service.Port, healthPort, p.source, p.EnableExternalNameService)
 			if err != nil {
-				validCond.AddErrorf(contour_api_v1.ConditionTypeTCPProxyError, "ServiceUnresolvedReference",
+				validCond.AddErrorf(contour_v1.ConditionTypeTCPProxyError, "ServiceUnresolvedReference",
 					"Spec.TCPProxy unresolved service reference: %s", err)
 				return false
 			}
@@ -1231,8 +1343,27 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 			// Determine the protocol to use to speak to this Cluster.
 			protocol, err := getProtocol(service, s)
 			if err != nil {
-				validCond.AddError(contour_api_v1.ConditionTypeServiceError, "UnsupportedProtocol", err.Error())
+				validCond.AddError(contour_v1.ConditionTypeServiceError, "UnsupportedProtocol", err.Error())
 				return false
+			}
+
+			var uv *PeerValidationContext
+			if (protocol == "tls" || protocol == "h2") && service.UpstreamValidation != nil {
+				uv = p.peerValidationContext(validCond, httpproxy, service)
+				if uv == nil {
+					return false
+				}
+			}
+
+			var clientCertSecret *Secret
+			if p.ClientCertificate != nil {
+				// Since the client certificate is configured by admin, explicit delegation is not required.
+				clientCertSecret, err = p.source.LookupTLSSecretInsecure(*p.ClientCertificate)
+				if err != nil {
+					validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "SecretNotValid",
+						"tls.envoy-client-certificate Secret %q is invalid: %s", p.ClientCertificate, err)
+					return false
+				}
 			}
 
 			proxy.Clusters = append(proxy.Clusters, &Cluster{
@@ -1243,12 +1374,15 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 				TCPHealthCheckPolicy: healthPolicy,
 				SNI:                  s.ExternalName,
 				TimeoutPolicy:        ClusterTimeoutPolicy{ConnectTimeout: p.ConnectTimeout},
+				UpstreamTLS:          p.UpstreamTLS,
+				UpstreamValidation:   uv,
+				ClientCertificate:    clientCertSecret,
 			})
 		}
 
 		listener, err := p.dag.GetSingleListener("https")
 		if err != nil {
-			validCond.AddError(contour_api_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
+			validCond.AddError(contour_v1.ConditionTypeListenerError, "ErrorIdentifyingListener", err.Error())
 			return false
 		}
 
@@ -1260,7 +1394,7 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 
 	if tcpProxyInclude == nil {
 		// We don't allow an empty TCPProxy object.
-		validCond.AddError(contour_api_v1.ConditionTypeTCPProxyError, "NothingDefined",
+		validCond.AddError(contour_v1.ConditionTypeTCPProxyError, "NothingDefined",
 			"either services or inclusion must be specified")
 		return false
 	}
@@ -1274,14 +1408,13 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 	m := types.NamespacedName{Name: tcpProxyInclude.Name, Namespace: namespace}
 	dest, ok := p.source.httpproxies[m]
 	if !ok {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeTCPProxyIncludeError, "IncludeNotFound",
+		validCond.AddErrorf(contour_v1.ConditionTypeTCPProxyIncludeError, "IncludeNotFound",
 			"include %s/%s not found", m.Namespace, m.Name)
 		return false
 	}
 
 	if dest.Spec.VirtualHost != nil {
-
-		validCond.AddErrorf(contour_api_v1.ConditionTypeTCPProxyIncludeError, "RootIncludesRoot",
+		validCond.AddErrorf(contour_v1.ConditionTypeTCPProxyIncludeError, "RootIncludesRoot",
 			"root httpproxy cannot include another root httpproxy (%s/%s)", dest.Namespace, dest.Name)
 		return false
 	}
@@ -1297,7 +1430,7 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 	for _, hp := range visited {
 		if dest.Name == hp.Name && dest.Namespace == hp.Namespace {
 			path = append(path, fmt.Sprintf("%s/%s", dest.Namespace, dest.Name))
-			validCond.AddErrorf(contour_api_v1.ConditionTypeTCPProxyIncludeError, "IncludeCreatesCycle",
+			validCond.AddErrorf(contour_v1.ConditionTypeTCPProxyIncludeError, "IncludeCreatesCycle",
 				"include creates a cycle: %s", strings.Join(path, " -> "))
 			return false
 		}
@@ -1311,13 +1444,13 @@ func (p *HTTPProxyProcessor) processHTTPProxyTCPProxy(validCond *contour_api_v1.
 	return ok
 }
 
-// validHTTPProxies returns a slice of *contour_api_v1.HTTPProxy objects.
+// validHTTPProxies returns a slice of *contour_v1.HTTPProxy objects.
 // invalid HTTPProxy objects are excluded from the slice and their status
 // updated accordingly.
-func (p *HTTPProxyProcessor) validHTTPProxies() []*contour_api_v1.HTTPProxy {
+func (p *HTTPProxyProcessor) validHTTPProxies() []*contour_v1.HTTPProxy {
 	// ensure that a given fqdn is only referenced in a single HTTPProxy resource
-	var valid []*contour_api_v1.HTTPProxy
-	fqdnHTTPProxies := make(map[string][]*contour_api_v1.HTTPProxy)
+	var valid []*contour_v1.HTTPProxy
+	fqdnHTTPProxies := make(map[string][]*contour_v1.HTTPProxy)
 	for _, proxy := range p.source.httpproxies {
 		if proxy.Spec.VirtualHost == nil {
 			valid = append(valid, proxy)
@@ -1342,7 +1475,7 @@ func (p *HTTPProxyProcessor) validHTTPProxies() []*contour_api_v1.HTTPProxy {
 			for _, proxy := range proxies {
 				pa, commit := p.dag.StatusCache.ProxyAccessor(proxy)
 				pa.Vhost = fqdn
-				pa.ConditionFor(status.ValidCondition).AddError(contour_api_v1.ConditionTypeVirtualHostError,
+				pa.ConditionFor(status.ValidCondition).AddError(contour_v1.ConditionTypeVirtualHostError,
 					"DuplicateVhost",
 					msg)
 				commit()
@@ -1365,23 +1498,28 @@ func (p *HTTPProxyProcessor) rootAllowed(namespace string) bool {
 	return false
 }
 
-func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(auth *contour_api_v1.AuthorizationServer, validCond *contour_api_v1.DetailedCondition, httpproxy *contour_api_v1.HTTPProxy) *ExternalAuthorization {
-	ok, ext := validateExternalAuthExtensionService(defaultExtensionRef(auth.ExtensionServiceRef),
+func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(
+	auth *contour_v1.AuthorizationServer,
+	validCond *contour_v1.DetailedCondition,
+	httpproxy *contour_v1.HTTPProxy,
+) *ExternalAuthorization {
+	ok, extSvc := validateExtensionService(
+		defaultExtensionRef(auth.ExtensionServiceRef),
 		validCond,
-		httpproxy,
-		p.dag.GetExtensionCluster,
-	)
+		httpproxy.Namespace,
+		contour_v1.ConditionTypeAuthError,
+		p.dag.GetExtensionCluster)
 	if !ok {
 		return nil
 	}
 
-	ok, respTimeout := determineExternalAuthTimeout(auth.ResponseTimeout, validCond, ext)
+	ok, respTimeout := determineExtensionServiceTimeout(contour_v1.ConditionTypeAuthError, auth.ResponseTimeout, validCond, extSvc)
 	if !ok {
 		return nil
 	}
 
-	globalExternalAuthorization := &ExternalAuthorization{
-		AuthorizationService:         ext,
+	extAuth := &ExternalAuthorization{
+		AuthorizationService:         extSvc,
 		AuthorizationFailOpen:        auth.FailOpen,
 		AuthorizationResponseTimeout: *respTimeout,
 	}
@@ -1391,43 +1529,111 @@ func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(auth *contour_api_v
 		if auth.WithRequestBody.MaxRequestBytes != 0 {
 			maxRequestBytes = auth.WithRequestBody.MaxRequestBytes
 		}
-		globalExternalAuthorization.AuthorizationServerWithRequestBody = &AuthorizationServerBufferSettings{
+		extAuth.AuthorizationServerWithRequestBody = &AuthorizationServerBufferSettings{
 			MaxRequestBytes:     maxRequestBytes,
 			AllowPartialMessage: auth.WithRequestBody.AllowPartialMessage,
 			PackAsBytes:         auth.WithRequestBody.PackAsBytes,
 		}
 	}
-	return globalExternalAuthorization
+	return extAuth
 }
 
-func validateExternalAuthExtensionService(ref contour_api_v1.ExtensionServiceReference, validCond *contour_api_v1.DetailedCondition, httpproxy *contour_api_v1.HTTPProxy, getExtensionCluster func(name string) *ExtensionCluster) (bool, *ExtensionCluster) {
-	if ref.APIVersion != contour_api_v1alpha1.GroupVersion.String() {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeAuthError, "AuthBadResourceVersion",
-			"Spec.Virtualhost.Authorization.extensionRef specifies an unsupported resource version %q", ref.APIVersion)
+func (p *HTTPProxyProcessor) computeVirtualHostExtProcs(
+	extProcessor *contour_v1.ExternalProcessor,
+	validCond *contour_v1.DetailedCondition,
+	httpproxy *contour_v1.HTTPProxy,
+) []*ExternalProcessor {
+	var extProcs []*ExternalProcessor
+	for _, ep := range extProcessor.Processors {
+		ok, extSvc := validateExtensionService(
+			defaultExtensionRef(ep.GRPCService.ExtensionServiceRef),
+			validCond,
+			httpproxy.Namespace,
+			contour_v1.ConditionTypeExtProcError,
+			p.dag.GetExtensionCluster)
+		if !ok {
+			return nil
+		}
+		ok, respTimeout := determineExtensionServiceTimeout(contour_v1.ConditionTypeExtProcError, ep.GRPCService.ResponseTimeout, validCond, extSvc)
+		if !ok {
+			return nil
+		}
+
+		extProcs = append(extProcs, &ExternalProcessor{
+			ExtProcService:  extSvc,
+			ResponseTimeout: *respTimeout,
+			FailOpen:        ep.GRPCService.FailOpen,
+			ProcessingMode:  ep.ProcessingMode,
+			MutationRules:   ep.MutationRules,
+			Phase:           ep.Phase,
+			Priority:        ep.Priority,
+		})
+
+	}
+
+	return extProcs
+}
+
+const (
+	versionErorrFormat = "%s specifies an unsupported resource version %q"
+	extSvcNotFound     = "%s extension service %q not found"
+)
+
+func validateExtensionService(
+	ref contour_v1.ExtensionServiceReference,
+	validCond *contour_v1.DetailedCondition,
+	defaultNamespace string,
+	errorType string,
+	extClusterGetter func(name string) *ExtensionCluster,
+) (bool, *ExtensionCluster) {
+	if ref.APIVersion != contour_v1alpha1.GroupVersion.String() {
+		reason := "AuthBadResourceVersion"
+		field := "Spec.Virtualhost.Authorization.extensionRef"
+
+		if errorType == contour_v1.ConditionTypeExtProcError {
+			reason = "ExtProcBadResourceVersion"
+			field = "Spec.VirtualHost.ExternalProcessor.Processors[*].ExtensionServiceRef"
+		}
+		validCond.AddErrorf(errorType, reason, versionErorrFormat, field, ref.APIVersion)
 		return false, nil
 	}
 
 	// Lookup the extension service reference.
 	extensionName := types.NamespacedName{
 		Name:      ref.Name,
-		Namespace: stringOrDefault(ref.Namespace, httpproxy.Namespace),
+		Namespace: stringOrDefault(ref.Namespace, defaultNamespace),
 	}
 
-	ext := getExtensionCluster(ExtensionClusterName(extensionName))
+	ext := extClusterGetter(ExtensionClusterName(extensionName))
 	if ext == nil {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeAuthError, "ExtensionServiceNotFound",
-			"Spec.Virtualhost.Authorization.ServiceRef extension service %q not found", extensionName)
+		field := "Spec.Virtualhost.Authorization.ServiceRef"
+		if errorType == contour_v1.ConditionTypeExtProcError {
+			field = "Spec.VirtualHost.ExternalProcessor.Processors[*].ExtensionServiceRef"
+		}
+		validCond.AddErrorf(errorType, "ExtensionServiceNotFound", extSvcNotFound, field, extensionName)
 		return false, ext
 	}
-
 	return true, ext
 }
 
-func determineExternalAuthTimeout(responseTimeout string, validCond *contour_api_v1.DetailedCondition, ext *ExtensionCluster) (bool, *timeout.Setting) {
-	tout, err := timeout.Parse(responseTimeout)
+const extSvcRespTimeoutFormat = "%s is invalid: %s"
+
+func determineExtensionServiceTimeout(
+	errorType string,
+	respTimeout string,
+	validCond *contour_v1.DetailedCondition,
+	ext *ExtensionCluster,
+) (bool, *timeout.Setting) {
+	tout, err := timeout.Parse(respTimeout)
 	if err != nil {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeAuthError, "AuthResponseTimeoutInvalid",
-			"Spec.Virtualhost.Authorization.ResponseTimeout is invalid: %s", err)
+		reason := "AuthResponseTimeoutInvalid"
+		field := "Spec.Virtualhost.Authorization.ResponseTimeout"
+
+		if errorType != contour_v1.ConditionTypeAuthError {
+			reason = "ExtProcResponseTimeoutInvalid"
+			field = "Spec.VirtualHost.ExternalProcessor.Processors[*].ResponseTimeout"
+		}
+		validCond.AddErrorf(errorType, reason, extSvcRespTimeoutFormat, field, err)
 		return false, nil
 	}
 
@@ -1438,30 +1644,52 @@ func determineExternalAuthTimeout(responseTimeout string, validCond *contour_api
 	return true, &tout
 }
 
-func (p *HTTPProxyProcessor) computeSecureVirtualHostAuthorization(validCond *contour_api_v1.DetailedCondition, httpproxy *contour_api_v1.HTTPProxy, svhost *SecureVirtualHost) bool {
+func (p *HTTPProxyProcessor) computeSecureVirtualHostExtProc(
+	validCond *contour_v1.DetailedCondition,
+	httpproxy *contour_v1.HTTPProxy,
+	svhost *SecureVirtualHost,
+) bool {
+	if httpproxy.Spec.VirtualHost.ExtProcConfigured() && !httpproxy.Spec.VirtualHost.DisableExtProc() {
+		eps := p.computeVirtualHostExtProcs(httpproxy.Spec.VirtualHost.ExternalProcessor, validCond, httpproxy)
+		if eps == nil {
+			return false
+		}
+		svhost.ExtProcs = eps
+
+	} else if p.GlobalExternalProcessor != nil && !httpproxy.Spec.VirtualHost.DisableExtProc() {
+		eps := p.computeVirtualHostExtProcs(p.GlobalExternalProcessor, validCond, httpproxy)
+		if eps == nil {
+			return false
+		}
+		svhost.ExtProcs = eps
+	}
+
+	return true
+}
+
+func (p *HTTPProxyProcessor) computeSecureVirtualHostAuthorization(validCond *contour_v1.DetailedCondition, httpproxy *contour_v1.HTTPProxy, svhost *SecureVirtualHost) bool {
 	if httpproxy.Spec.VirtualHost.AuthorizationConfigured() && !httpproxy.Spec.VirtualHost.DisableAuthorization() {
 		authorization := p.computeVirtualHostAuthorization(httpproxy.Spec.VirtualHost.Authorization, validCond, httpproxy)
 		if authorization == nil {
 			return false
 		}
-
 		svhost.ExternalAuthorization = authorization
+
 	} else if p.GlobalExternalAuthorization != nil && !httpproxy.Spec.VirtualHost.DisableAuthorization() {
 		globalAuthorization := p.computeVirtualHostAuthorization(p.GlobalExternalAuthorization, validCond, httpproxy)
 		if globalAuthorization == nil {
 			return false
 		}
-
 		svhost.ExternalAuthorization = globalAuthorization
 	}
 
 	return true
 }
 
-func computeVirtualHostRateLimitPolicy(proxy *contour_api_v1.HTTPProxy, rls *contour_api_v1alpha1.RateLimitServiceConfig, validCond *contour_api_v1.DetailedCondition) (*RateLimitPolicy, bool) {
+func computeVirtualHostRateLimitPolicy(proxy *contour_v1.HTTPProxy, rls *contour_v1alpha1.RateLimitServiceConfig, validCond *contour_v1.DetailedCondition) (*RateLimitPolicy, bool) {
 	rlp, err := rateLimitPolicy(proxy.Spec.VirtualHost.RateLimitPolicy)
 	if err != nil {
-		validCond.AddErrorf(contour_api_v1.ConditionTypeVirtualHostError, "RateLimitPolicyNotValid",
+		validCond.AddErrorf(contour_v1.ConditionTypeVirtualHostError, "RateLimitPolicyNotValid",
 			"Spec.VirtualHost.RateLimitPolicy is invalid: %s", err)
 		return nil, false
 	}
@@ -1484,7 +1712,7 @@ func computeVirtualHostRateLimitPolicy(proxy *contour_api_v1.HTTPProxy, rls *con
 		}
 		rlp.Global, err = globalRateLimitPolicy(rls.DefaultGlobalRateLimitPolicy)
 		if err != nil {
-			validCond.AddErrorf(contour_api_v1.ConditionTypeVirtualHostError, "RateLimitPolicyNotValid",
+			validCond.AddErrorf(contour_v1.ConditionTypeVirtualHostError, "RateLimitPolicyNotValid",
 				"Default Global RateLimit Policy is invalid: %s", err)
 			return nil, false
 		}
@@ -1503,6 +1731,23 @@ func (p *HTTPProxyProcessor) GlobalAuthorizationContext() map[string]string {
 		return p.GlobalExternalAuthorization.AuthPolicy.Context
 	}
 	return nil
+}
+
+func (p *HTTPProxyProcessor) peerValidationContext(validCond *contour_v1.DetailedCondition, httpproxy *contour_v1.HTTPProxy, service contour_v1.Service) *PeerValidationContext {
+	caCertNamespacedName := k8s.NamespacedNameFrom(service.UpstreamValidation.CACertificate, k8s.DefaultNamespace(httpproxy.Namespace))
+	// we can only validate TLS connections to services that talk TLS
+	uv, err := p.source.LookupUpstreamValidation(service.UpstreamValidation, caCertNamespacedName, httpproxy.Namespace)
+	if err != nil {
+		if _, ok := err.(DelegationNotPermittedError); ok {
+			validCond.AddErrorf(contour_v1.ConditionTypeTLSError, "CACertificateNotDelegated",
+				"service.UpstreamValidation.CACertificate Secret %q is not configured for certificate delegation", caCertNamespacedName)
+		} else {
+			validCond.AddErrorf(contour_v1.ConditionTypeServiceError, "TLSUpstreamValidation",
+				"Service [%s:%d] TLS upstream validation policy error: %s", service.Name, service.Port, err)
+		}
+		return nil
+	}
+	return uv
 }
 
 // expandPrefixMatches adds new Routes to account for the difference
@@ -1604,7 +1849,7 @@ func expandPrefixMatches(routes []*Route) []*Route {
 	return expandedRoutes
 }
 
-func getProtocol(service contour_api_v1.Service, s *Service) (string, error) {
+func getProtocol(service contour_v1.Service, s *Service) (string, error) {
 	// Determine the protocol to use to speak to this Cluster.
 	var protocol string
 	if service.Protocol != nil {
@@ -1642,7 +1887,7 @@ func determineSNI(routeRequestHeaders, clusterRequestHeaders *HeadersPolicy, ser
 	return service.ExternalName
 }
 
-func toCORSPolicy(policy *contour_api_v1.CORSPolicy) (*CORSPolicy, error) {
+func toCORSPolicy(policy *contour_v1.CORSPolicy) (*CORSPolicy, error) {
 	if policy == nil {
 		return nil, nil
 	}
@@ -1715,7 +1960,7 @@ func toCORSPolicy(policy *contour_api_v1.CORSPolicy) (*CORSPolicy, error) {
 	}, nil
 }
 
-func toStringSlice(hvs []contour_api_v1.CORSHeaderValue) []string {
+func toStringSlice(hvs []contour_v1.CORSHeaderValue) []string {
 	s := make([]string, len(hvs))
 	for i, v := range hvs {
 		s[i] = string(v)
@@ -1729,7 +1974,7 @@ type matchConditionAggregate struct {
 	queryParamConds []QueryParamMatchCondition
 }
 
-func includeMatchConditionsIdentical(includeConds []contour_api_v1.MatchCondition, seenConds map[string][]matchConditionAggregate) bool {
+func includeMatchConditionsIdentical(includeConds []contour_v1.MatchCondition, seenConds map[string][]matchConditionAggregate) bool {
 	pathPrefix := ""
 
 	switch pathPrefixRef := mergePathMatchConditions(includeConds).(type) {
@@ -1874,7 +2119,7 @@ func directResponse(statusCode uint32, body string) *DirectResponse {
 }
 
 // routeActionCountValid  only one of route.services, route.requestRedirectPolicy, or route.directResponsePolicy can be specified
-func routeActionCountValid(route contour_api_v1.Route) error {
+func routeActionCountValid(route contour_v1.Route) error {
 	var routeActionCount int
 	if len(route.Services) > 0 {
 		routeActionCount++
@@ -1894,8 +2139,20 @@ func routeActionCountValid(route contour_api_v1.Route) error {
 	return nil
 }
 
+func routeExtProcValid(policy *contour_v1.ExtProcPolicy) error {
+	if policy == nil {
+		return nil
+	}
+
+	if policy.Overrides != nil && policy.Disabled {
+		return fmt.Errorf("cannot specify both ExtProcPolicy.Overrides and ExtProcPolicy.Disabled ")
+	}
+
+	return nil
+}
+
 // redirectRoutePolicy builds a *dag.Redirect for the supplied redirect policy.
-func redirectRoutePolicy(redirect *contour_api_v1.HTTPRequestRedirectPolicy) (*Redirect, error) {
+func redirectRoutePolicy(redirect *contour_v1.HTTPRequestRedirectPolicy) (*Redirect, error) {
 	if redirect == nil {
 		return nil, nil
 	}
@@ -1947,7 +2204,7 @@ func redirectRoutePolicy(redirect *contour_api_v1.HTTPRequestRedirectPolicy) (*R
 	}, nil
 }
 
-func directResponsePolicy(direct *contour_api_v1.HTTPDirectResponsePolicy) *DirectResponse {
+func directResponsePolicy(direct *contour_v1.HTTPDirectResponsePolicy) *DirectResponse {
 	if direct == nil {
 		return nil
 	}
@@ -1955,7 +2212,7 @@ func directResponsePolicy(direct *contour_api_v1.HTTPDirectResponsePolicy) *Dire
 	return directResponse(uint32(direct.StatusCode), direct.Body)
 }
 
-func internalRedirectPolicy(internal *contour_api_v1.HTTPInternalRedirectPolicy) *InternalRedirectPolicy {
+func internalRedirectPolicy(internal *contour_v1.HTTPInternalRedirectPolicy) *InternalRedirectPolicy {
 	if internal == nil {
 		return nil
 	}
@@ -1982,7 +2239,7 @@ func internalRedirectPolicy(internal *contour_api_v1.HTTPInternalRedirectPolicy)
 	return policy
 }
 
-func slowStartConfig(slowStart *contour_api_v1.SlowStartPolicy) (*SlowStartConfig, error) {
+func slowStartConfig(slowStart *contour_v1.SlowStartPolicy) (*SlowStartConfig, error) {
 	window, err := time.ParseDuration(slowStart.Window)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing window: %s", err)
@@ -2003,7 +2260,7 @@ func slowStartConfig(slowStart *contour_api_v1.SlowStartPolicy) (*SlowStartConfi
 	}, nil
 }
 
-func rateLimitPerRoute(in *contour_api_v1.RateLimitPolicy) *RateLimitPerRoute {
+func rateLimitPerRoute(in *contour_v1.RateLimitPolicy) *RateLimitPerRoute {
 	// Ignore the virtual host global rate limit policy if disabled is true
 	if in != nil && in.Global != nil && in.Global.Disabled {
 		return &RateLimitPerRoute{

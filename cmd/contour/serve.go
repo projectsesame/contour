@@ -27,30 +27,31 @@ import (
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
+	core_v1 "k8s.io/api/core/v1"
+	discovery_v1 "k8s.io/api/discovery/v1"
 	networking_v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
 	ctrl_cache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	controller_runtime_metrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	controller_runtime_metrics_server "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	gatewayapi_v1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayapi_v1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gatewayapi_v1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
-	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
-	contour_api_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
+	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
+	contour_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/annotation"
 	"github.com/projectcontour/contour/internal/contour"
 	"github.com/projectcontour/contour/internal/contourconfig"
-	"github.com/projectcontour/contour/internal/controller"
 	"github.com/projectcontour/contour/internal/dag"
 	"github.com/projectcontour/contour/internal/debug"
 	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
@@ -59,7 +60,6 @@ import (
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/leadership"
 	"github.com/projectcontour/contour/internal/metrics"
-	"github.com/projectcontour/contour/internal/ref"
 	"github.com/projectcontour/contour/internal/timeout"
 	"github.com/projectcontour/contour/internal/xds"
 	contour_xds_v3 "github.com/projectcontour/contour/internal/xds/v3"
@@ -134,7 +134,7 @@ func registerServe(app *kingpin.Application) (*kingpin.CmdClause, *serveContext)
 	serve.Flag("debug", "Enable debug logging.").Short('d').BoolVar(&ctx.Config.Debug)
 	serve.Flag("debug-http-address", "Address the debug http endpoint will bind to.").PlaceHolder("<ipaddr>").StringVar(&ctx.debugAddr)
 	serve.Flag("debug-http-port", "Port the debug http endpoint will bind to.").PlaceHolder("<port>").IntVar(&ctx.debugPort)
-	serve.Flag("disable-feature", "Do not start an informer for the specified resources.").PlaceHolder("<extensionservices,tlsroutes,grpcroutes,tcproutes>").EnumsVar(&ctx.disabledFeatures, "extensionservices", "tlsroutes", "grpcroutes", "tcproutes")
+	serve.Flag("disable-feature", "Do not start an informer for the specified resources.").PlaceHolder("<extensionservices,tlsroutes,grpcroutes,tcproutes,backendtlspolicies>").EnumsVar(&ctx.disabledFeatures, "extensionservices", "tlsroutes", "grpcroutes", "tcproutes", "backendtlspolicies")
 	serve.Flag("disable-leader-election", "Disable leader election mechanism.").BoolVar(&ctx.LeaderElection.Disable)
 
 	serve.Flag("envoy-http-access-log", "Envoy HTTP access log.").PlaceHolder("/path/to/file").StringVar(&ctx.httpAccessLog)
@@ -238,16 +238,16 @@ func NewServer(log logrus.FieldLogger, ctx *serveContext) (*Server, error) {
 			// ByObject is a function that allows changing incoming objects before they are cached by the informer.
 			// This is useful for saving memory by removing fields that are not needed by Contour.
 			ByObject: map[client.Object]ctrl_cache.ByObject{
-				&corev1.Secret{}: {
+				&core_v1.Secret{}: {
 					Transform: func(obj any) (any, error) {
-						secret, ok := obj.(*corev1.Secret)
+						secret, ok := obj.(*core_v1.Secret)
 						// TransformFunc should handle the tombstone of type cache.DeletedFinalStateUnknown
 						if !ok {
 							return obj, nil
 						}
 
 						// Do not touch Secrets that might be needed.
-						if secret.Type == corev1.SecretTypeTLS || secret.Type == corev1.SecretTypeOpaque {
+						if secret.Type == core_v1.SecretTypeTLS || secret.Type == core_v1.SecretTypeOpaque {
 							return obj, nil
 						}
 
@@ -259,6 +259,28 @@ func NewServer(log logrus.FieldLogger, ctx *serveContext) (*Server, error) {
 						secret.SetAnnotations(nil)
 
 						return secret, nil
+					},
+				},
+				&core_v1.ConfigMap{}: {
+					Transform: func(obj any) (any, error) {
+						configMap, ok := obj.(*core_v1.ConfigMap)
+						// TransformFunc should handle the tombstone of type cache.DeletedFinalStateUnknown
+						if !ok {
+							return obj, nil
+						}
+
+						// Keep ConfigMaps that have the ca.crt key because they may be necessary
+						if _, ok := configMap.Data[dag.CACertificateKey]; ok {
+							return obj, nil
+						}
+
+						// Other types of ConfigMaps will never be referred to, so we can remove all data.
+						// Last-applied-configuration annotation might contain a copy of the complete data.
+						configMap.Data = map[string]string{}
+						configMap.SetManagedFields(nil)
+						configMap.SetAnnotations(nil)
+
+						return configMap, nil
 					},
 				},
 			},
@@ -318,8 +340,8 @@ func NewServer(log logrus.FieldLogger, ctx *serveContext) (*Server, error) {
 	}, nil
 }
 
-func (s *Server) getConfig() (contour_api_v1alpha1.ContourConfigurationSpec, error) {
-	var userConfig contour_api_v1alpha1.ContourConfigurationSpec
+func (s *Server) getConfig() (contour_v1alpha1.ContourConfigurationSpec, error) {
+	var userConfig contour_v1alpha1.ContourConfigurationSpec
 
 	// Get the ContourConfiguration CRD if specified
 	if len(s.ctx.contourConfigurationName) > 0 {
@@ -332,13 +354,13 @@ func (s *Server) getConfig() (contour_api_v1alpha1.ContourConfigurationSpec, err
 			contourNamespace = "projectcontour"
 		}
 
-		contourConfig := &contour_api_v1alpha1.ContourConfiguration{}
+		contourConfig := &contour_v1alpha1.ContourConfiguration{}
 		key := client.ObjectKey{Namespace: contourNamespace, Name: s.ctx.contourConfigurationName}
 
 		// Using GetAPIReader() here because the manager's caches won't be started yet,
 		// so reads from the manager's client (which uses the caches for reads) will fail.
 		if err := s.mgr.GetAPIReader().Get(context.Background(), key, contourConfig); err != nil {
-			return contour_api_v1alpha1.ContourConfigurationSpec{}, fmt.Errorf("error getting contour configuration %s: %v", key, err)
+			return contour_v1alpha1.ContourConfigurationSpec{}, fmt.Errorf("error getting contour configuration %s: %v", key, err)
 		}
 
 		// Copy the Spec from the parsed Configuration
@@ -352,11 +374,11 @@ func (s *Server) getConfig() (contour_api_v1alpha1.ContourConfigurationSpec, err
 	// with the final set of config to use.
 	contourConfiguration, err := contourconfig.OverlayOnDefaults(userConfig)
 	if err != nil {
-		return contour_api_v1alpha1.ContourConfigurationSpec{}, err
+		return contour_v1alpha1.ContourConfigurationSpec{}, err
 	}
 
 	if err := contourConfiguration.Validate(); err != nil {
-		return contour_api_v1alpha1.ContourConfigurationSpec{}, err
+		return contour_v1alpha1.ContourConfigurationSpec{}, err
 	}
 
 	return contourConfiguration, nil
@@ -461,6 +483,10 @@ func (s *Server) doServe() error {
 		return err
 	}
 
+	if listenerConfig.GlobalExternalProcessors, err = s.setupGlobalExternalProcessor(contourConfiguration); err != nil {
+		return err
+	}
+
 	contourMetrics := metrics.NewMetrics(s.registry)
 
 	// Endpoints updates are handled directly by the EndpointsTranslator/EndpointSliceTranslator due to the high update volume.
@@ -487,7 +513,7 @@ func (s *Server) doServe() error {
 	// the contents of the Contour xDS caches after the DAG is built.
 	var snapshotHandler *xdscache_v3.SnapshotHandler
 
-	if contourConfiguration.XDSServer.Type == contour_api_v1alpha1.EnvoyServerType {
+	if contourConfiguration.XDSServer.Type == contour_v1alpha1.EnvoyServerType {
 		snapshotHandler = xdscache_v3.NewSnapshotHandler(
 			resources,
 			envoy_cache_v3.NewSnapshotCache(false, &contour_xds_v3.Hash, s.log.WithField("context", "snapshotCache")),
@@ -525,24 +551,18 @@ func (s *Server) doServe() error {
 		return err
 	}
 
-	var gatewayControllerName string
 	var gatewayRef *types.NamespacedName
 
 	if contourConfiguration.Gateway != nil {
-		gatewayControllerName = contourConfiguration.Gateway.ControllerName
-
-		if contourConfiguration.Gateway.GatewayRef != nil {
-			gatewayRef = &types.NamespacedName{
-				Namespace: contourConfiguration.Gateway.GatewayRef.Namespace,
-				Name:      contourConfiguration.Gateway.GatewayRef.Name,
-			}
+		gatewayRef = &types.NamespacedName{
+			Namespace: contourConfiguration.Gateway.GatewayRef.Namespace,
+			Name:      contourConfiguration.Gateway.GatewayRef.Name,
 		}
 	}
 
 	builder := s.getDAGBuilder(dagBuilderConfig{
 		ingressClassNames:                  ingressClassNames,
 		rootNamespaces:                     contourConfiguration.HTTPProxy.RootNamespaces,
-		gatewayControllerName:              gatewayControllerName,
 		gatewayRef:                         gatewayRef,
 		disablePermitInsecure:              *contourConfiguration.HTTPProxy.DisablePermitInsecure,
 		enableExternalNameService:          *contourConfiguration.EnableExternalNameService,
@@ -561,6 +581,7 @@ func (s *Server) doServe() error {
 		globalRateLimitService:             contourConfiguration.RateLimitService,
 		maxRequestsPerConnection:           contourConfiguration.Envoy.Cluster.MaxRequestsPerConnection,
 		perConnectionBufferLimitBytes:      contourConfiguration.Envoy.Cluster.PerConnectionBufferLimitBytes,
+		globalExternalProcessor:            contourConfiguration.GlobalExternalProcessor,
 		globalCircuitBreakerDefaults:       contourConfiguration.Envoy.Cluster.GlobalCircuitBreakerDefaults,
 		upstreamTLS: &dag.UpstreamTLS{
 			MinimumProtocolVersion: annotation.TLSVersion(contourConfiguration.Envoy.Cluster.UpstreamTLS.MinimumProtocolVersion, "1.2"),
@@ -608,10 +629,10 @@ func (s *Server) doServe() error {
 
 	// Start to build informers.
 	informerResources := map[string]client.Object{
-		"httpproxies":               &contour_api_v1.HTTPProxy{},
-		"tlscertificatedelegations": &contour_api_v1.TLSCertificateDelegation{},
-		"extensionservices":         &contour_api_v1alpha1.ExtensionService{},
-		"services":                  &corev1.Service{},
+		"httpproxies":               &contour_v1.HTTPProxy{},
+		"tlscertificatedelegations": &contour_v1.TLSCertificateDelegation{},
+		"extensionservices":         &contour_v1alpha1.ExtensionService{},
+		"services":                  &core_v1.Service{},
 		"ingresses":                 &networking_v1.Ingress{},
 	}
 
@@ -628,7 +649,7 @@ func (s *Server) doServe() error {
 	}
 
 	// Inform on Gateway API resources.
-	needsNotification := s.setupGatewayAPI(contourConfiguration, s.mgr, eventHandler, sh)
+	s.setupGatewayAPI(contourConfiguration, eventHandler)
 
 	// Inform on secrets, filtering by root namespaces.
 	var handler cache.ResourceEventHandler = eventHandler
@@ -638,20 +659,20 @@ func (s *Server) doServe() error {
 		handler = k8s.NewNamespaceFilter(sets.List(secretNamespaces), eventHandler)
 	}
 
-	if err := s.informOnResource(&corev1.Secret{}, handler); err != nil {
+	if err := s.informOnResource(&core_v1.Secret{}, handler); err != nil {
 		s.log.WithError(err).WithField("resource", "secrets").Fatal("failed to create informer")
 	}
 
 	// Inform on endpoints/endpointSlices.
 	if contourConfiguration.FeatureFlags.IsEndpointSliceEnabled() {
-		if err := s.informOnResource(&discoveryv1.EndpointSlice{}, &contour.EventRecorder{
+		if err := s.informOnResource(&discovery_v1.EndpointSlice{}, &contour.EventRecorder{
 			Next:    endpointHandler,
 			Counter: contourMetrics.EventHandlerOperations,
 		}); err != nil {
 			s.log.WithError(err).WithField("resource", "endpointslices").Fatal("failed to create informer")
 		}
 	} else {
-		if err := s.informOnResource(&corev1.Endpoints{}, &contour.EventRecorder{
+		if err := s.informOnResource(&core_v1.Endpoints{}, &contour.EventRecorder{
 			Next:    endpointHandler,
 			Counter: contourMetrics.EventHandlerOperations,
 		}); err != nil {
@@ -681,13 +702,12 @@ func (s *Server) doServe() error {
 
 	// Set up ingress load balancer status writer.
 	lbsw := &loadBalancerStatusWriter{
-		log:                   s.log.WithField("context", "loadBalancerStatusWriter"),
-		cache:                 s.mgr.GetCache(),
-		lbStatus:              make(chan corev1.LoadBalancerStatus, 1),
-		ingressClassNames:     ingressClassNames,
-		gatewayControllerName: gatewayControllerName,
-		gatewayRef:            gatewayRef,
-		statusUpdater:         sh.Writer(),
+		log:               s.log.WithField("context", "loadBalancerStatusWriter"),
+		cache:             s.mgr.GetCache(),
+		lbStatus:          make(chan core_v1.LoadBalancerStatus, 1),
+		ingressClassNames: ingressClassNames,
+		gatewayRef:        gatewayRef,
+		statusUpdater:     sh.Writer(),
 	}
 	if err := s.mgr.Add(lbsw); err != nil {
 		return err
@@ -709,7 +729,7 @@ func (s *Server) doServe() error {
 			handler = k8s.NewNamespaceFilter([]string{contourConfiguration.Envoy.Service.Namespace}, handler)
 		}
 
-		if err := s.informOnResource(&corev1.Service{}, handler); err != nil {
+		if err := s.informOnResource(&core_v1.Service{}, handler); err != nil {
 			s.log.WithError(err).WithField("resource", "services").Fatal("failed to create informer")
 		}
 
@@ -731,10 +751,7 @@ func (s *Server) doServe() error {
 	}
 
 	notifier := &leadership.Notifier{
-		ToNotify: append([]leadership.NeedLeaderElectionNotification{
-			contourHandler,
-			observer,
-		}, needsNotification...),
+		ToNotify: []leadership.NeedLeaderElectionNotification{contourHandler, observer},
 	}
 	if err := s.mgr.Add(notifier); err != nil {
 		return err
@@ -745,7 +762,7 @@ func (s *Server) doServe() error {
 }
 
 func (s *Server) getExtensionSvcConfig(name, namespace string) (xdscache_v3.ExtensionServiceConfig, error) {
-	extensionSvc := &contour_api_v1alpha1.ExtensionService{}
+	extensionSvc := &contour_v1alpha1.ExtensionService{}
 	key := client.ObjectKey{
 		Namespace: namespace,
 		Name:      name,
@@ -781,7 +798,7 @@ func (s *Server) getExtensionSvcConfig(name, namespace string) (xdscache_v3.Exte
 	return extensionSvcConfig, nil
 }
 
-func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.TracingConfig) (*xdscache_v3.TracingConfig, error) {
+func (s *Server) setupTracingService(tracingConfig *contour_v1alpha1.TracingConfig) (*xdscache_v3.TracingConfig, error) {
 	if tracingConfig == nil {
 		return nil, nil
 	}
@@ -794,7 +811,7 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 
 	var customTags []*xdscache_v3.CustomTag
 
-	if ref.Val(tracingConfig.IncludePodDetail, true) {
+	if ptr.Deref(tracingConfig.IncludePodDetail, true) {
 		customTags = append(customTags, &xdscache_v3.CustomTag{
 			TagName:         "podName",
 			EnvironmentName: "HOSTNAME",
@@ -812,21 +829,21 @@ func (s *Server) setupTracingService(tracingConfig *contour_api_v1alpha1.Tracing
 		})
 	}
 
-	overallSampling, err := strconv.ParseFloat(ref.Val(tracingConfig.OverallSampling, "100"), 64)
+	overallSampling, err := strconv.ParseFloat(ptr.Deref(tracingConfig.OverallSampling, "100"), 64)
 	if err != nil || overallSampling == 0 {
 		overallSampling = 100.0
 	}
 
 	return &xdscache_v3.TracingConfig{
-		ServiceName:            ref.Val(tracingConfig.ServiceName, "contour"),
+		ServiceName:            ptr.Deref(tracingConfig.ServiceName, "contour"),
 		ExtensionServiceConfig: extensionSvcConfig,
 		OverallSampling:        overallSampling,
-		MaxPathTagLength:       ref.Val(tracingConfig.MaxPathTagLength, 256),
+		MaxPathTagLength:       ptr.Deref(tracingConfig.MaxPathTagLength, 256),
 		CustomTags:             customTags,
 	}, nil
 }
 
-func (s *Server) setupRateLimitService(contourConfiguration contour_api_v1alpha1.ContourConfigurationSpec) (*xdscache_v3.RateLimitConfig, error) {
+func (s *Server) setupRateLimitService(contourConfiguration contour_v1alpha1.ContourConfigurationSpec) (*xdscache_v3.RateLimitConfig, error) {
 	if contourConfiguration.RateLimitService == nil {
 		return nil, nil
 	}
@@ -838,15 +855,16 @@ func (s *Server) setupRateLimitService(contourConfiguration contour_api_v1alpha1
 	}
 
 	return &xdscache_v3.RateLimitConfig{
-		ExtensionServiceConfig:      extensionSvcConfig,
-		Domain:                      contourConfiguration.RateLimitService.Domain,
-		FailOpen:                    ref.Val(contourConfiguration.RateLimitService.FailOpen, false),
-		EnableXRateLimitHeaders:     ref.Val(contourConfiguration.RateLimitService.EnableXRateLimitHeaders, false),
-		EnableResourceExhaustedCode: ref.Val(contourConfiguration.RateLimitService.EnableResourceExhaustedCode, false),
+		ExtensionServiceConfig: extensionSvcConfig,
+		Domain:                 contourConfiguration.RateLimitService.Domain,
+
+		FailOpen:                    ptr.Deref(contourConfiguration.RateLimitService.FailOpen, false),
+		EnableXRateLimitHeaders:     ptr.Deref(contourConfiguration.RateLimitService.EnableXRateLimitHeaders, false),
+		EnableResourceExhaustedCode: ptr.Deref(contourConfiguration.RateLimitService.EnableResourceExhaustedCode, false),
 	}, nil
 }
 
-func (s *Server) setupGlobalExternalAuthentication(contourConfiguration contour_api_v1alpha1.ContourConfigurationSpec) (*xdscache_v3.GlobalExternalAuthConfig, error) {
+func (s *Server) setupGlobalExternalAuthentication(contourConfiguration contour_v1alpha1.ContourConfigurationSpec) (*xdscache_v3.GlobalExternalAuthConfig, error) {
 	if contourConfiguration.GlobalExternalAuthorization == nil {
 		return nil, nil
 	}
@@ -878,7 +896,45 @@ func (s *Server) setupGlobalExternalAuthentication(contourConfiguration contour_
 	return globalExternalAuthConfig, nil
 }
 
-func (s *Server) setupDebugService(debugConfig contour_api_v1alpha1.DebugConfig, builder *dag.Builder) error {
+func (s *Server) setupGlobalExternalProcessor(contourCfg contour_v1alpha1.ContourConfigurationSpec) ([]xdscache_v3.GlobalExtProcConfig, error) {
+	if contourCfg.GlobalExternalProcessor == nil {
+		return nil, nil
+	}
+
+	if contourCfg.GlobalExternalProcessor.ExtProcPolicy != nil {
+		return nil, fmt.Errorf("GlobalExternalProcessor.ExtProcPolicy cannot be defined")
+	}
+
+	m := map[client.ObjectKey]struct{}{}
+
+	var globalExtProcs []xdscache_v3.GlobalExtProcConfig
+	for _, ep := range contourCfg.GlobalExternalProcessor.Processors {
+
+		// ensure the specified ExtensionService exists
+		extSvcCfg, err := s.getExtensionSvcConfig(ep.GRPCService.ExtensionServiceRef.Name, ep.GRPCService.ExtensionServiceRef.Namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		// ensure unique external processing
+		if _, ok := m[extSvcCfg.ExtensionService]; ok {
+			return nil, fmt.Errorf("external processing %s/%s is duplicated", extSvcCfg.ExtensionService.Namespace, extSvcCfg.ExtensionService.Namespace)
+		}
+		m[extSvcCfg.ExtensionService] = struct{}{}
+
+		globalExtProcs = append(globalExtProcs, xdscache_v3.GlobalExtProcConfig{
+			ExtensionServiceConfig: extSvcCfg,
+			FailOpen:               ep.GRPCService.FailOpen,
+			Phase:                  ep.Phase,
+			Priority:               ep.Priority,
+			ProcessingMode:         ep.ProcessingMode,
+			MutationRules:          ep.MutationRules,
+		})
+	}
+	return globalExtProcs, nil
+}
+
+func (s *Server) setupDebugService(debugConfig contour_v1alpha1.DebugConfig, builder *dag.Builder) error {
 	debugsvc := &debug.Service{
 		Service: httpsvc.Service{
 			Addr:        debugConfig.Address,
@@ -893,7 +949,7 @@ func (s *Server) setupDebugService(debugConfig contour_api_v1alpha1.DebugConfig,
 type xdsServer struct {
 	log             logrus.FieldLogger
 	registry        *prometheus.Registry
-	config          contour_api_v1alpha1.XDSServerConfig
+	config          contour_v1alpha1.XDSServerConfig
 	snapshotHandler *xdscache_v3.SnapshotHandler
 	resources       []xdscache.ResourceCache
 	initialDagBuilt func() bool
@@ -917,9 +973,9 @@ func (x *xdsServer) Start(ctx context.Context) error {
 	grpcServer := xds.NewServer(x.registry, grpcOptions(log, x.config.TLS)...)
 
 	switch x.config.Type {
-	case contour_api_v1alpha1.EnvoyServerType:
+	case contour_v1alpha1.EnvoyServerType:
 		contour_xds_v3.RegisterServer(envoy_server_v3.NewServer(ctx, x.snapshotHandler.SnapshotCache, contour_xds_v3.NewRequestLoggingCallbacks(log)), grpcServer)
-	case contour_api_v1alpha1.ContourServerType:
+	case contour_v1alpha1.ContourServerType:
 		contour_xds_v3.RegisterServer(contour_xds_v3.NewContourServer(log, xdscache.ResourcesOf(x.resources)...), grpcServer)
 	default:
 		// This can't happen due to config validation.
@@ -954,7 +1010,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 }
 
 // setupMetrics creates metrics service for Contour.
-func (s *Server) setupMetrics(metricsConfig contour_api_v1alpha1.MetricsConfig, healthConfig contour_api_v1alpha1.HealthConfig,
+func (s *Server) setupMetrics(metricsConfig contour_v1alpha1.MetricsConfig, healthConfig contour_v1alpha1.HealthConfig,
 	registry *prometheus.Registry,
 ) error {
 	// Create metrics service and register with mgr.
@@ -982,8 +1038,8 @@ func (s *Server) setupMetrics(metricsConfig contour_api_v1alpha1.MetricsConfig, 
 	return s.mgr.Add(metricsvc)
 }
 
-func (s *Server) setupHealth(healthConfig contour_api_v1alpha1.HealthConfig,
-	metricsConfig contour_api_v1alpha1.MetricsConfig,
+func (s *Server) setupHealth(healthConfig contour_v1alpha1.HealthConfig,
+	metricsConfig contour_v1alpha1.MetricsConfig,
 ) error {
 	if healthConfig.Address != metricsConfig.Address || healthConfig.Port != metricsConfig.Port {
 		healthsvc := &httpsvc.Service{
@@ -1002,116 +1058,48 @@ func (s *Server) setupHealth(healthConfig contour_api_v1alpha1.HealthConfig,
 	return nil
 }
 
-func (s *Server) setupGatewayAPI(contourConfiguration contour_api_v1alpha1.ContourConfigurationSpec,
-	mgr manager.Manager, eventHandler *contour.EventRecorder, sh *k8s.StatusUpdateHandler,
-) []leadership.NeedLeaderElectionNotification {
-	needLeadershipNotification := []leadership.NeedLeaderElectionNotification{}
-
-	// Check if GatewayAPI is configured.
-	if contourConfiguration.Gateway != nil && (contourConfiguration.Gateway.GatewayRef != nil || len(contourConfiguration.Gateway.ControllerName) > 0) {
-		switch {
-		// If a specific gateway was specified, we don't need to run the
-		// GatewayClass and Gateway controllers to determine which gateway
-		// to process, we just need informers to get events.
-		case contourConfiguration.Gateway.GatewayRef != nil:
-			// Inform on GatewayClasses.
-			if err := s.informOnResource(&gatewayapi_v1beta1.GatewayClass{}, eventHandler); err != nil {
-				s.log.WithError(err).WithField("resource", "gatewayclasses").Fatal("failed to create informer")
-			}
-
-			// Inform on Gateways.
-			if err := s.informOnResource(&gatewayapi_v1beta1.Gateway{}, eventHandler); err != nil {
-				s.log.WithError(err).WithField("resource", "gateways").Fatal("failed to create informer")
-			}
-		// Otherwise, run the GatewayClass and Gateway controllers to determine
-		// the appropriate gateway class and gateway to process.
-		default:
-			// Create and register the gatewayclass controller with the manager.
-			gatewayClassControllerName := contourConfiguration.Gateway.ControllerName
-			gwClass, err := controller.RegisterGatewayClassController(
-				s.log.WithField("context", "gatewayclass-controller"),
-				mgr,
-				eventHandler,
-				sh.Writer(),
-				gatewayClassControllerName,
-			)
-			if err != nil {
-				s.log.WithError(err).Fatal("failed to create gatewayclass-controller")
-			}
-			needLeadershipNotification = append(needLeadershipNotification, gwClass)
-
-			// Create and register the NewGatewayController controller with the manager.
-			gw, err := controller.RegisterGatewayController(
-				s.log.WithField("context", "gateway-controller"),
-				mgr,
-				eventHandler,
-				sh.Writer(),
-				gatewayClassControllerName,
-			)
-			if err != nil {
-				s.log.WithError(err).Fatal("failed to create gateway-controller")
-			}
-			needLeadershipNotification = append(needLeadershipNotification, gw)
+func (s *Server) setupGatewayAPI(contourConfiguration contour_v1alpha1.ContourConfigurationSpec, eventHandler *contour.EventRecorder) {
+	// Watch resources for Gateway API if enabled.
+	if contourConfiguration.Gateway != nil {
+		resources := map[string]client.Object{
+			"gatewayclasses":     &gatewayapi_v1.GatewayClass{},
+			"gateways":           &gatewayapi_v1.Gateway{},
+			"httproutes":         &gatewayapi_v1.HTTPRoute{},
+			"referencegrants":    &gatewayapi_v1beta1.ReferenceGrant{},
+			"namespaces":         &core_v1.Namespace{},
+			"tlsroutes":          &gatewayapi_v1alpha2.TLSRoute{},
+			"grpcroutes":         &gatewayapi_v1alpha2.GRPCRoute{},
+			"tcproutes":          &gatewayapi_v1alpha2.TCPRoute{},
+			"backendtlspolicies": &gatewayapi_v1alpha2.BackendTLSPolicy{},
+			"configmaps":         &core_v1.ConfigMap{},
 		}
 
-		// Some features may be disabled.
-		features := map[string]struct{}{
-			"tlsroutes":  {},
-			"grpcroutes": {},
-			"tcproutes":  {},
-		}
-		for _, f := range s.ctx.disabledFeatures {
-			delete(features, f)
-		}
+		for _, disabled := range s.ctx.disabledFeatures {
+			delete(resources, disabled)
 
-		// Create and register the HTTPRoute controller with the manager.
-		if err := controller.RegisterHTTPRouteController(s.log.WithField("context", "httproute-controller"), mgr, eventHandler); err != nil {
-			s.log.WithError(err).Fatal("failed to create httproute-controller")
-		}
-
-		// Create and register the TLSRoute controller with the manager, if enabled.
-		if _, enabled := features["tlsroutes"]; enabled {
-			if err := controller.RegisterTLSRouteController(s.log.WithField("context", "tlsroute-controller"), mgr, eventHandler); err != nil {
-				s.log.WithError(err).Fatal("failed to create tlsroute-controller")
+			if disabled == "backendtlspolicies" {
+				// ConfigMaps are only watched because they're
+				// used by BackendTLSPolicies.
+				delete(resources, "configmaps")
 			}
 		}
 
-		// Create and register the GRPCRoute controller with the manager, if enabled.
-		if _, enabled := features["grpcroutes"]; enabled {
-			if err := controller.RegisterGRPCRouteController(s.log.WithField("context", "grpcroute-controller"), mgr, eventHandler); err != nil {
-				s.log.WithError(err).Fatal("failed to create grpcroute-controller")
+		for name, obj := range resources {
+			if err := s.informOnResource(obj, eventHandler); err != nil {
+				s.log.WithError(err).WithField("resource", name).Fatal("failed to create informer")
 			}
-		}
-
-		// Create and register the TCPRoute controller with the manager.
-		if _, enabled := features["tcproutes"]; enabled {
-			if err := controller.RegisterTCPRouteController(s.log.WithField("context", "tcproute-controller"), mgr, eventHandler); err != nil {
-				s.log.WithError(err).Fatal("failed to create tcproute-controller")
-			}
-		}
-
-		// Inform on ReferenceGrants.
-		if err := s.informOnResource(&gatewayapi_v1beta1.ReferenceGrant{}, eventHandler); err != nil {
-			s.log.WithError(err).WithField("resource", "referencegrants").Fatal("failed to create informer")
-		}
-
-		// Inform on Namespaces.
-		if err := s.informOnResource(&corev1.Namespace{}, eventHandler); err != nil {
-			s.log.WithError(err).WithField("resource", "namespaces").Fatal("failed to create informer")
 		}
 	}
-	return needLeadershipNotification
 }
 
 type dagBuilderConfig struct {
 	ingressClassNames                  []string
 	rootNamespaces                     []string
-	gatewayControllerName              string
 	gatewayRef                         *types.NamespacedName
 	disablePermitInsecure              bool
 	enableExternalNameService          bool
-	dnsLookupFamily                    contour_api_v1alpha1.ClusterDNSFamilyType
-	headersPolicy                      *contour_api_v1alpha1.PolicyConfig
+	dnsLookupFamily                    contour_v1alpha1.ClusterDNSFamilyType
+	headersPolicy                      *contour_v1alpha1.PolicyConfig
 	clientCert                         *types.NamespacedName
 	fallbackCert                       *types.NamespacedName
 	connectTimeout                     time.Duration
@@ -1121,14 +1109,15 @@ type dagBuilderConfig struct {
 	httpPort                           int
 	httpsAddress                       string
 	httpsPort                          int
-	globalExternalAuthorizationService *contour_api_v1.AuthorizationServer
+	globalExternalAuthorizationService *contour_v1.AuthorizationServer
 	maxRequestsPerConnection           *uint32
 	perConnectionBufferLimitBytes      *uint32
-	globalRateLimitService             *contour_api_v1alpha1.RateLimitServiceConfig
-	globalCircuitBreakerDefaults       *contour_api_v1alpha1.GlobalCircuitBreakerDefaults
+	globalRateLimitService             *contour_v1alpha1.RateLimitServiceConfig
+	globalExternalProcessor            *contour_v1.ExternalProcessor
+	globalCircuitBreakerDefaults       *contour_v1alpha1.GlobalCircuitBreakerDefaults
 	upstreamTLS                        *dag.UpstreamTLS
 	enableStatPrefix                   bool
-	globalOutlierDetection             *contour_api_v1.OutlierDetection
+	globalOutlierDetection             *contour_v1.OutlierDetection
 }
 
 func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
@@ -1224,6 +1213,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			GlobalRateLimitService:        dbc.globalRateLimitService,
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
+			GlobalExternalProcessor:       dbc.globalExternalProcessor,
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			UpstreamTLS:                   dbc.upstreamTLS,
 			EnableStatPrefix:              dbc.enableStatPrefix,
@@ -1231,7 +1221,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 		},
 	}
 
-	if len(dbc.gatewayControllerName) > 0 || dbc.gatewayRef != nil {
+	if dbc.gatewayRef != nil {
 		dagProcessors = append(dagProcessors, &dag.GatewayAPIProcessor{
 			EnableExternalNameService:     dbc.enableExternalNameService,
 			FieldLogger:                   s.log.WithField("context", "GatewayAPIProcessor"),
@@ -1241,6 +1231,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			SetSourceMetadataOnRoutes:     true,
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			EnableStatPrefix:              dbc.enableStatPrefix,
+			UpstreamTLS:                   dbc.upstreamTLS,
 		})
 	}
 

@@ -14,9 +14,9 @@
 package v1alpha1
 
 import (
-	contour_api_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 )
 
 // ContourConfigurationSpec represents a configuration of a Contour controller.
@@ -65,7 +65,7 @@ type ContourConfigurationSpec struct {
 	// GlobalExternalAuthorization allows envoys external authorization filter
 	// to be enabled for all virtual hosts.
 	// +optional
-	GlobalExternalAuthorization *contour_api_v1.AuthorizationServer `json:"globalExtAuth,omitempty"`
+	GlobalExternalAuthorization *contour_v1.AuthorizationServer `json:"globalExtAuth,omitempty"`
 
 	// RateLimitService optionally holds properties of the Rate Limit Service
 	// to be used for global rate limiting.
@@ -85,6 +85,10 @@ type ContourConfigurationSpec struct {
 	// Tracing defines properties for exporting trace data to OpenTelemetry.
 	Tracing *TracingConfig `json:"tracing,omitempty"`
 
+	// GlobalExternalProcessor allows envoys external processing filters
+	// to be enabled for all virtual hosts.
+	// +optional
+	GlobalExternalProcessor *contour_v1.ExternalProcessor `json:"globalExtProc,omitempty"`
 	// FeatureFlags defines toggle to enable new contour features.
 	// Available toggles are:
 	// useEndpointSlices - configures contour to fetch endpoint data
@@ -95,7 +99,7 @@ type ContourConfigurationSpec struct {
 	// GlobalOutlierDetection defines the configuration for outlier detection on all services.
 	// If defined, this will be used as the default for all services.
 	// +optional
-	GlobalOutlierDetection *contour_api_v1.OutlierDetection `json:"outlierDetection,omitempty"`
+	GlobalOutlierDetection *contour_v1.OutlierDetection `json:"outlierDetection,omitempty"`
 }
 
 // FeatureFlags defines the set of feature flags
@@ -159,20 +163,9 @@ type XDSServerConfig struct {
 
 // GatewayConfig holds the config for Gateway API controllers.
 type GatewayConfig struct {
-	// ControllerName is used to determine whether Contour should reconcile a
-	// GatewayClass. The string takes the form of "projectcontour.io/<namespace>/contour".
-	// If unset, the gatewayclass controller will not be started.
-	// Exactly one of ControllerName or GatewayRef must be set.
-	// +optional
-	ControllerName string `json:"controllerName,omitempty"`
-
-	// GatewayRef defines a specific Gateway that this Contour
-	// instance corresponds to. If set, Contour will reconcile
-	// only this gateway, and will not reconcile any gateway
-	// classes.
-	// Exactly one of ControllerName or GatewayRef must be set.
-	// +optional
-	GatewayRef *NamespacedName `json:"gatewayRef,omitempty"`
+	// GatewayRef defines the specific Gateway that this Contour
+	// instance corresponds to.
+	GatewayRef NamespacedName `json:"gatewayRef"`
 }
 
 // TLS holds TLS file config details.
@@ -806,7 +799,7 @@ type RateLimitServiceConfig struct {
 	// HTTPProxy can overwrite this configuration.
 	//
 	// +optional
-	DefaultGlobalRateLimitPolicy *contour_api_v1.GlobalRateLimitPolicy `json:"defaultGlobalRateLimitPolicy,omitempty"`
+	DefaultGlobalRateLimitPolicy *contour_v1.GlobalRateLimitPolicy `json:"defaultGlobalRateLimitPolicy,omitempty"`
 }
 
 // TracingConfig defines properties for exporting trace data to OpenTelemetry.
@@ -905,7 +898,7 @@ type ContourConfigurationStatus struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=type
-	Conditions []contour_api_v1.DetailedCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Conditions []contour_v1.DetailedCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +genclient
@@ -915,8 +908,8 @@ type ContourConfigurationStatus struct {
 
 // ContourConfiguration is the schema for a Contour instance.
 type ContourConfiguration struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	meta_v1.TypeMeta   `json:",inline"`
+	meta_v1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec ContourConfigurationSpec `json:"spec"`
 
@@ -929,7 +922,7 @@ type ContourConfiguration struct {
 
 // ContourConfigurationList contains a list of Contour configuration resources.
 type ContourConfigurationList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ContourConfiguration `json:"items"`
+	meta_v1.TypeMeta `json:",inline"`
+	meta_v1.ListMeta `json:"metadata,omitempty"`
+	Items            []ContourConfiguration `json:"items"`
 }
