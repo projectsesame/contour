@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	envoy_cache_v3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	envoy_server_v3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
@@ -483,10 +482,6 @@ func (s *Server) doServe() error {
 		return err
 	}
 
-	if listenerConfig.GlobalExternalProcessors, err = s.setupGlobalExternalProcessor(contourConfiguration); err != nil {
-		return err
-	}
-
 	contourMetrics := metrics.NewMetrics(s.registry)
 
 	// Endpoints updates are handled directly by the EndpointsTranslator/EndpointSliceTranslator due to the high update volume.
@@ -514,11 +509,7 @@ func (s *Server) doServe() error {
 	var snapshotHandler *xdscache_v3.SnapshotHandler
 
 	if contourConfiguration.XDSServer.Type == contour_v1alpha1.EnvoyServerType {
-		snapshotHandler = xdscache_v3.NewSnapshotHandler(
-			resources,
-			envoy_cache_v3.NewSnapshotCache(false, &contour_xds_v3.Hash, s.log.WithField("context", "snapshotCache")),
-			s.log.WithField("context", "snapshotHandler"),
-		)
+		snapshotHandler = xdscache_v3.NewSnapshotHandler(resources, s.log.WithField("context", "snapshotHandler"))
 
 		// register observer for endpoints updates.
 		endpointHandler.SetObserver(contour.ComposeObservers(snapshotHandler))
@@ -581,7 +572,6 @@ func (s *Server) doServe() error {
 		globalRateLimitService:             contourConfiguration.RateLimitService,
 		maxRequestsPerConnection:           contourConfiguration.Envoy.Cluster.MaxRequestsPerConnection,
 		perConnectionBufferLimitBytes:      contourConfiguration.Envoy.Cluster.PerConnectionBufferLimitBytes,
-		globalExternalProcessor:            contourConfiguration.GlobalExternalProcessor,
 		globalCircuitBreakerDefaults:       contourConfiguration.Envoy.Cluster.GlobalCircuitBreakerDefaults,
 		upstreamTLS: &dag.UpstreamTLS{
 			MinimumProtocolVersion: annotation.TLSVersion(contourConfiguration.Envoy.Cluster.UpstreamTLS.MinimumProtocolVersion, "1.2"),
@@ -896,44 +886,6 @@ func (s *Server) setupGlobalExternalAuthentication(contourConfiguration contour_
 	return globalExternalAuthConfig, nil
 }
 
-func (s *Server) setupGlobalExternalProcessor(contourCfg contour_v1alpha1.ContourConfigurationSpec) ([]xdscache_v3.GlobalExtProcConfig, error) {
-	if contourCfg.GlobalExternalProcessor == nil {
-		return nil, nil
-	}
-
-	if contourCfg.GlobalExternalProcessor.ExtProcPolicy != nil {
-		return nil, fmt.Errorf("GlobalExternalProcessor.ExtProcPolicy cannot be defined")
-	}
-
-	m := map[client.ObjectKey]struct{}{}
-
-	var globalExtProcs []xdscache_v3.GlobalExtProcConfig
-	for _, ep := range contourCfg.GlobalExternalProcessor.Processors {
-
-		// ensure the specified ExtensionService exists
-		extSvcCfg, err := s.getExtensionSvcConfig(ep.GRPCService.ExtensionServiceRef.Name, ep.GRPCService.ExtensionServiceRef.Namespace)
-		if err != nil {
-			return nil, err
-		}
-
-		// ensure unique external processing
-		if _, ok := m[extSvcCfg.ExtensionService]; ok {
-			return nil, fmt.Errorf("external processing %s/%s is duplicated", extSvcCfg.ExtensionService.Namespace, extSvcCfg.ExtensionService.Namespace)
-		}
-		m[extSvcCfg.ExtensionService] = struct{}{}
-
-		globalExtProcs = append(globalExtProcs, xdscache_v3.GlobalExtProcConfig{
-			ExtensionServiceConfig: extSvcCfg,
-			FailOpen:               ep.GRPCService.FailOpen,
-			Phase:                  ep.Phase,
-			Priority:               ep.Priority,
-			ProcessingMode:         ep.ProcessingMode,
-			MutationRules:          ep.MutationRules,
-		})
-	}
-	return globalExtProcs, nil
-}
-
 func (s *Server) setupDebugService(debugConfig contour_v1alpha1.DebugConfig, builder *dag.Builder) error {
 	debugsvc := &debug.Service{
 		Service: httpsvc.Service{
@@ -963,7 +915,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 	log := x.log.WithField("context", "xds")
 
 	log.Info("waiting for the initial dag to be built")
-	if err := wait.PollUntilContextCancel(ctx, initialDagBuildPollPeriod, true, func(ctx context.Context) (done bool, err error) {
+	if err := wait.PollUntilContextCancel(ctx, initialDagBuildPollPeriod, true, func(context.Context) (done bool, err error) {
 		return x.initialDagBuilt(), nil
 	}); err != nil {
 		return fmt.Errorf("failed to wait for initial dag build, %w", err)
@@ -974,7 +926,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 
 	switch x.config.Type {
 	case contour_v1alpha1.EnvoyServerType:
-		contour_xds_v3.RegisterServer(envoy_server_v3.NewServer(ctx, x.snapshotHandler.SnapshotCache, contour_xds_v3.NewRequestLoggingCallbacks(log)), grpcServer)
+		contour_xds_v3.RegisterServer(envoy_server_v3.NewServer(ctx, x.snapshotHandler.GetCache(), contour_xds_v3.NewRequestLoggingCallbacks(log)), grpcServer)
 	case contour_v1alpha1.ContourServerType:
 		contour_xds_v3.RegisterServer(contour_xds_v3.NewContourServer(log, xdscache.ResourcesOf(x.resources)...), grpcServer)
 	default:
@@ -1113,7 +1065,6 @@ type dagBuilderConfig struct {
 	maxRequestsPerConnection           *uint32
 	perConnectionBufferLimitBytes      *uint32
 	globalRateLimitService             *contour_v1alpha1.RateLimitServiceConfig
-	globalExternalProcessor            *contour_v1.ExternalProcessor
 	globalCircuitBreakerDefaults       *contour_v1alpha1.GlobalCircuitBreakerDefaults
 	upstreamTLS                        *dag.UpstreamTLS
 	enableStatPrefix                   bool
@@ -1213,7 +1164,6 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 			GlobalRateLimitService:        dbc.globalRateLimitService,
 			PerConnectionBufferLimitBytes: dbc.perConnectionBufferLimitBytes,
 			SetSourceMetadataOnRoutes:     true,
-			GlobalExternalProcessor:       dbc.globalExternalProcessor,
 			GlobalCircuitBreakerDefaults:  dbc.globalCircuitBreakerDefaults,
 			UpstreamTLS:                   dbc.upstreamTLS,
 			EnableStatPrefix:              dbc.enableStatPrefix,

@@ -241,7 +241,7 @@ func (t ProtocolParameters) Validate() error {
 // ServerParameters holds the configuration for the Contour xDS server.
 type ServerParameters struct {
 	// Defines the XDSServer to use for `contour serve`.
-	// Defaults to "contour"
+	// Defaults to "envoy"
 	XDSServerType ServerType `yaml:"xds-server-type,omitempty"`
 }
 
@@ -706,8 +706,6 @@ type Parameters struct {
 	// Tracing holds the relevant configuration for exporting trace data to OpenTelemetry.
 	Tracing *Tracing `yaml:"tracing,omitempty"`
 
-	// GlobalExternalProcessor optionally holds properties of the global external processing configurations.
-	GlobalExternalProcessor *contour_v1.ExternalProcessor `yaml:"globalExtProc,omitempty"`
 	// FeatureFlags defines toggle to enable new contour features.
 	// available toggles are
 	// useEndpointSlices - configures contour to fetch endpoint data
@@ -1038,7 +1036,7 @@ func Defaults() Parameters {
 		InCluster:  false,
 		Kubeconfig: filepath.Join(os.Getenv("HOME"), ".kube", "config"),
 		Server: ServerParameters{
-			XDSServerType: ContourServerType,
+			XDSServerType: EnvoyServerType,
 		},
 		IngressStatusAddress:       "",
 		AccessLogFormat:            DEFAULT_ACCESS_LOG_TYPE,
