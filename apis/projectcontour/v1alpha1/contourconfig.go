@@ -85,10 +85,6 @@ type ContourConfigurationSpec struct {
 	// Tracing defines properties for exporting trace data to OpenTelemetry.
 	Tracing *TracingConfig `json:"tracing,omitempty"`
 
-	// GlobalExternalProcessor allows envoys external processing filters
-	// to be enabled for all virtual hosts.
-	// +optional
-	GlobalExternalProcessor *contour_v1.ExternalProcessor `json:"globalExtProc,omitempty"`
 	// FeatureFlags defines toggle to enable new contour features.
 	// Available toggles are:
 	// useEndpointSlices - configures contour to fetch endpoint data
@@ -110,7 +106,7 @@ type FeatureFlags []string
 type XDSServerType string
 
 const (
-	// Use Contour's xDS server.
+	// Use Contour's xDS server (deprecated).
 	ContourServerType XDSServerType = "contour"
 	// Use the upstream `go-control-plane`-based xDS server.
 	EnvoyServerType XDSServerType = "envoy"
@@ -135,7 +131,7 @@ type GlobalCircuitBreakerDefaults struct {
 type XDSServerConfig struct {
 	// Defines the XDSServer to use for `contour serve`.
 	//
-	// Values: `contour` (default), `envoy`.
+	// Values: `envoy` (default), `contour (deprecated)`.
 	//
 	// Other values will produce an error.
 	// +optional
