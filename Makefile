@@ -53,7 +53,8 @@ BUILD_CGO_ENABLED ?= 0
 BUILD_GOPRIVATE ?= ""
 
 # Go module mirror to use.
-BUILD_GOPROXY ?= https://proxy.golang.org
+#BUILD_GOPROXY ?= https://proxy.golang.org
+BUILD_GOPROXY ?= https://goproxy.cn
 
 # Checksum db to use.
 BUILD_GOSUMDB ?= sum.golang.org
@@ -124,9 +125,8 @@ race:
 download: ## Download Go modules
 	go mod download
 
-multiarch-build: ## Build and optionally push a multi-arch Contour container image to the Docker registry
-	@mkdir -p $(shell pwd)/image
-	docker buildx build $(IMAGE_RESULT_FLAG) \
+multiarch-build:
+	docker buildx build \
 		--platform $(IMAGE_PLATFORMS) \
 		--build-arg "BUILD_GOPRIVATE=$(BUILD_GOPRIVATE)" \
 		--build-arg "BUILD_GOPROXY=$(BUILD_GOPROXY)" \
@@ -138,9 +138,11 @@ multiarch-build: ## Build and optionally push a multi-arch Contour container ima
 		--build-arg "BUILD_CGO_ENABLED=$(BUILD_CGO_ENABLED)" \
 		--build-arg "BUILD_EXTRA_GO_LDFLAGS=$(BUILD_EXTRA_GO_LDFLAGS)" \
 		--build-arg "BUILD_GOEXPERIMENT=$(BUILD_GOEXPERIMENT)" \
+		--label "commit.sync.upstream=23a029" \
 		$(DOCKER_BUILD_LABELS) \
-		$(IMAGE_TAGS) \
-		$(shell pwd)
+		-t release-ci.daocloud.io/skoala/contour:v1.28.1-23a029  \
+		$(shell pwd) \
+		--push
 
 container: ## Build the Contour container image
 	docker build \
