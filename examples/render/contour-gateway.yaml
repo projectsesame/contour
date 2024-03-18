@@ -762,7 +762,6 @@ spec:
                       When true, this field disables the external processor: (neither global nor virtualHost)
                       for the scope of the policy.
                       if both Disabled and Processor are set. use disabled.
-                      it just work for virtualhost
                     type: boolean
                   processor:
                     description: |-
@@ -4707,7 +4706,6 @@ spec:
                           When true, this field disables the external processor: (neither global nor virtualHost)
                           for the scope of the policy.
                           if both Disabled and Processor are set. use disabled.
-                          it just work for virtualhost
                         type: boolean
                       processor:
                         description: |-
@@ -8227,7 +8225,6 @@ spec:
                           When true, this field disables the external processor: (neither global nor virtualHost)
                           for the scope of the policy.
                           if both Disabled and Processor are set. use disabled.
-                          it just work for virtualhost
                         type: boolean
                       processor:
                         description: |-
