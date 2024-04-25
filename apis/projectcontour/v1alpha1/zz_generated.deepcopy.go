@@ -219,9 +219,9 @@ func (in *ContourConfigurationSpec) DeepCopyInto(out *ContourConfigurationSpec) 
 		*out = new(v1.OutlierDetection)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.GlobalExtProc != nil {
-		in, out := &in.GlobalExtProc, &out.GlobalExtProc
-		*out = new(v1.ExternalProcessor)
+	if in.GlobalExternalProcessing != nil {
+		in, out := &in.GlobalExternalProcessing, &out.GlobalExternalProcessing
+		*out = new(v1.ExternalProcessing)
 		(*in).DeepCopyInto(*out)
 	}
 }

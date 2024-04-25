@@ -223,7 +223,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: contourconfigurations.projectcontour.io
 spec:
   preserveUnknownFields: false
@@ -823,9 +823,9 @@ spec:
                 description: |-
                   FeatureFlags defines toggle to enable new contour features.
                   Available toggles are:
-                  useEndpointSlices - configures contour to fetch endpoint data
-                  from k8s endpoint slices. defaults to false and reading endpoint
-                  data from the k8s endpoints.
+                  useEndpointSlices - Configures contour to fetch endpoint data
+                  from k8s endpoint slices. defaults to true,
+                  If false then reads endpoint data from the k8s endpoints.
                 items:
                   type: string
                 type: array
@@ -936,72 +936,62 @@ spec:
                         type: boolean
                     type: object
                 type: object
-              globalExtProc:
+              globalExternalProcessing:
                 description: |-
-                  GlobalExtProc allows envoys external processing filter
+                  GlobalExternalProcessing allows envoys external processing filter
                   to be enabled for all virtual hosts.
                 properties:
                   disabled:
                     description: |-
-                      When true, this field disables the external processor: (neither global nor virtualHost)
-                      for the scope of the policy.
+                      When true, this field disables the external processor for the scope of the policy.
+                      - for global: no external processing will be append to the filter chain
                       if both Disabled and Processor are set. use disabled.
-                      it just work for virtualhost
                     type: boolean
                   processor:
-                    description: |-
-                      Processor defines a processing filter list,and each filter in the list
-                      will be added to the corresponding processing Priority in ascending order of it's Priority within the same phase.
-                      If no phase is specified, it will be added before the Router.
-                      If no Priority is specified, the filters will be added in the order they appear in the list.
+                    description: Processor defines a external processing filter which
+                      allows an external service to act on HTTP traffic in a flexible
+                      way.
                     properties:
-                      grpcService:
-                        description: GRPCService configure the gRPC service that the
-                          filter will communicate with.
+                      allowModeOverride:
+                        description: |-
+                          If true, the filter config processingMode can be overridden by the response message from the external processing server `mode_override``.
+                          If false, `mode_override` API in the response message will be ignored.
+                        type: boolean
+                      extensionRef:
+                        description: ExtensionServiceRef specifies the extension resource
+                          that will handle the client requests.
                         properties:
-                          extensionRef:
-                            description: ExtensionServiceRef specifies the extension
-                              resource that will handle the client requests.
-                            properties:
-                              apiVersion:
-                                description: |-
-                                  API version of the referent.
-                                  If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
-                                minLength: 1
-                                type: string
-                              name:
-                                description: |-
-                                  Name of the referent.
-                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                minLength: 1
-                                type: string
-                              namespace:
-                                description: |-
-                                  Namespace of the referent.
-                                  If this field is not specifies, the namespace of the resource that targets the referent will be used.
-                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                                minLength: 1
-                                type: string
-                            type: object
-                          failOpen:
+                          apiVersion:
                             description: |-
-                              If FailOpen is true, the client request is forwarded to the upstream service
-                              even if the server fails to respond. This field should not be
-                              set in most cases.
-                            type: boolean
-                          responseTimeout:
+                              API version of the referent.
+                              If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
+                            minLength: 1
+                            type: string
+                          name:
                             description: |-
-                              ResponseTimeout sets how long the proxy should wait for responses.
-                              Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
-                              Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-                              The string "infinity" is also a valid input and specifies no timeout.
-                            pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace of the referent.
+                              If this field is not specifies, the namespace of the resource that targets the referent will be used.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                            minLength: 1
                             type: string
                         type: object
+                      failOpen:
+                        description: |-
+                          If FailOpen is true, the client request is forwarded to the upstream service
+                          even if the server fails to respond. This field should not be
+                          set in most cases.
+                        type: boolean
                       mutationRules:
                         description: |-
                           MutationRules specifies what headers may be manipulated by a processing filter.
                           This set of rules makes it possible to control which modifications a filter may make.
+                          for Overrides is must be nil
                         properties:
                           allowAllRouting:
                             description: |-
@@ -1109,6 +1099,14 @@ spec:
                             - SKIP
                             type: string
                         type: object
+                      responseTimeout:
+                        description: |-
+                          ResponseTimeout sets how long the proxy should wait for responses.
+                          Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
+                          Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                          The string "infinity" is also a valid input and specifies no timeout.
+                        pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                        type: string
                     type: object
                 type: object
               health:
@@ -1832,7 +1830,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: contourdeployments.projectcontour.io
 spec:
   preserveUnknownFields: false
@@ -2286,6 +2284,8 @@ spec:
                             to container and the other way around.
                             When not set, MountPropagationNone is used.
                             This field is beta in 1.10.
+                            When RecursiveReadOnly is set to IfPossible or to Enabled, MountPropagation must be None or unspecified
+                            (which defaults to None).
                           type: string
                         name:
                           description: This must match the Name of a Volume.
@@ -2295,6 +2295,21 @@ spec:
                             Mounted read-only if true, read-write otherwise (false or unspecified).
                             Defaults to false.
                           type: boolean
+                        recursiveReadOnly:
+                          description: |-
+                            RecursiveReadOnly specifies whether read-only mounts should be handled
+                            recursively.
+                            If ReadOnly is false, this field has no meaning and must be unspecified.
+                            If ReadOnly is true, and this field is set to Disabled, the mount is not made
+                            recursively read-only.  If this field is set to IfPossible, the mount is made
+                            recursively read-only, if it is supported by the container runtime.  If this
+                            field is set to Enabled, the mount is made recursively read-only if it is
+                            supported by the container runtime, otherwise the pod will not be started and
+                            an error will be generated to indicate the reason.
+                            If this field is set to IfPossible or Enabled, MountPropagation must be set to
+                            None (or be unspecified, which defaults to None).
+                            If this field is not specified, it is treated as an equivalent of Disabled.
+                          type: string
                         subPath:
                           description: |-
                             Path within the volume from which the container's volume should be mounted.
@@ -2422,6 +2437,7 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                             path:
                               description: 'path is Optional: Used as the mounted
                                 root, rather than the full Ceph tree, default is /'
@@ -2550,6 +2566,7 @@ spec:
                                 - path
                                 type: object
                               type: array
+                              x-kubernetes-list-type: atomic
                             name:
                               description: |-
                                 Name of the referent.
@@ -2634,8 +2651,8 @@ spec:
                                 properties:
                                   fieldRef:
                                     description: 'Required: Selects a field of the
-                                      pod: only annotations, labels, name and namespace
-                                      are supported.'
+                                      pod: only annotations, labels, name, namespace
+                                      and uid are supported.'
                                     properties:
                                       apiVersion:
                                         description: Version of the schema the FieldPath
@@ -2694,6 +2711,7 @@ spec:
                                 - path
                                 type: object
                               type: array
+                              x-kubernetes-list-type: atomic
                           type: object
                         emptyDir:
                           description: |-
@@ -2785,6 +2803,7 @@ spec:
                                       items:
                                         type: string
                                       type: array
+                                      x-kubernetes-list-type: atomic
                                     dataSource:
                                       description: |-
                                         dataSource field can be used to specify either:
@@ -2929,11 +2948,13 @@ spec:
                                                 items:
                                                   type: string
                                                 type: array
+                                                x-kubernetes-list-type: atomic
                                             required:
                                             - key
                                             - operator
                                             type: object
                                           type: array
+                                          x-kubernetes-list-type: atomic
                                         matchLabels:
                                           additionalProperties:
                                             type: string
@@ -2961,7 +2982,7 @@ spec:
                                         If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
                                         set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
                                         exists.
-                                        More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#volumeattributesclass
+                                        More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
                                         (Alpha) Using this field requires the VolumeAttributesClass feature gate to be enabled.
                                       type: string
                                     volumeMode:
@@ -3005,6 +3026,7 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                             wwids:
                               description: |-
                                 wwids Optional: FC volume world wide identifiers (wwids)
@@ -3012,6 +3034,7 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                           type: object
                         flexVolume:
                           description: |-
@@ -3232,6 +3255,7 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                             readOnly:
                               description: |-
                                 readOnly here will force the ReadOnly setting in VolumeMounts.
@@ -3416,11 +3440,13 @@ spec:
                                                   items:
                                                     type: string
                                                   type: array
+                                                  x-kubernetes-list-type: atomic
                                               required:
                                               - key
                                               - operator
                                               type: object
                                             type: array
+                                            x-kubernetes-list-type: atomic
                                           matchLabels:
                                             additionalProperties:
                                               type: string
@@ -3499,6 +3525,7 @@ spec:
                                           - path
                                           type: object
                                         type: array
+                                        x-kubernetes-list-type: atomic
                                       name:
                                         description: |-
                                           Name of the referent.
@@ -3526,7 +3553,7 @@ spec:
                                             fieldRef:
                                               description: 'Required: Selects a field
                                                 of the pod: only annotations, labels,
-                                                name and namespace are supported.'
+                                                name, namespace and uid are supported.'
                                               properties:
                                                 apiVersion:
                                                   description: Version of the schema
@@ -3590,6 +3617,7 @@ spec:
                                           - path
                                           type: object
                                         type: array
+                                        x-kubernetes-list-type: atomic
                                     type: object
                                   secret:
                                     description: secret information about the secret
@@ -3633,6 +3661,7 @@ spec:
                                           - path
                                           type: object
                                         type: array
+                                        x-kubernetes-list-type: atomic
                                       name:
                                         description: |-
                                           Name of the referent.
@@ -3676,6 +3705,7 @@ spec:
                                     type: object
                                 type: object
                               type: array
+                              x-kubernetes-list-type: atomic
                           type: object
                         quobyte:
                           description: quobyte represents a Quobyte mount on the host
@@ -3746,6 +3776,7 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                             pool:
                               description: |-
                                 pool is the rados pool name.
@@ -3901,6 +3932,7 @@ spec:
                                 - path
                                 type: object
                               type: array
+                              x-kubernetes-list-type: atomic
                             optional:
                               description: optional field specify whether the Secret
                                 or its keys must be defined
@@ -4768,9 +4800,9 @@ spec:
                     description: |-
                       FeatureFlags defines toggle to enable new contour features.
                       Available toggles are:
-                      useEndpointSlices - configures contour to fetch endpoint data
-                      from k8s endpoint slices. defaults to false and reading endpoint
-                      data from the k8s endpoints.
+                      useEndpointSlices - Configures contour to fetch endpoint data
+                      from k8s endpoint slices. defaults to true,
+                      If false then reads endpoint data from the k8s endpoints.
                     items:
                       type: string
                     type: array
@@ -4881,72 +4913,62 @@ spec:
                             type: boolean
                         type: object
                     type: object
-                  globalExtProc:
+                  globalExternalProcessing:
                     description: |-
-                      GlobalExtProc allows envoys external processing filter
+                      GlobalExternalProcessing allows envoys external processing filter
                       to be enabled for all virtual hosts.
                     properties:
                       disabled:
                         description: |-
-                          When true, this field disables the external processor: (neither global nor virtualHost)
-                          for the scope of the policy.
+                          When true, this field disables the external processor for the scope of the policy.
+                          - for global: no external processing will be append to the filter chain
                           if both Disabled and Processor are set. use disabled.
-                          it just work for virtualhost
                         type: boolean
                       processor:
-                        description: |-
-                          Processor defines a processing filter list,and each filter in the list
-                          will be added to the corresponding processing Priority in ascending order of it's Priority within the same phase.
-                          If no phase is specified, it will be added before the Router.
-                          If no Priority is specified, the filters will be added in the order they appear in the list.
+                        description: Processor defines a external processing filter
+                          which allows an external service to act on HTTP traffic
+                          in a flexible way.
                         properties:
-                          grpcService:
-                            description: GRPCService configure the gRPC service that
-                              the filter will communicate with.
+                          allowModeOverride:
+                            description: |-
+                              If true, the filter config processingMode can be overridden by the response message from the external processing server `mode_override``.
+                              If false, `mode_override` API in the response message will be ignored.
+                            type: boolean
+                          extensionRef:
+                            description: ExtensionServiceRef specifies the extension
+                              resource that will handle the client requests.
                             properties:
-                              extensionRef:
-                                description: ExtensionServiceRef specifies the extension
-                                  resource that will handle the client requests.
-                                properties:
-                                  apiVersion:
-                                    description: |-
-                                      API version of the referent.
-                                      If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
-                                    minLength: 1
-                                    type: string
-                                  name:
-                                    description: |-
-                                      Name of the referent.
-                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                    minLength: 1
-                                    type: string
-                                  namespace:
-                                    description: |-
-                                      Namespace of the referent.
-                                      If this field is not specifies, the namespace of the resource that targets the referent will be used.
-                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                                    minLength: 1
-                                    type: string
-                                type: object
-                              failOpen:
+                              apiVersion:
                                 description: |-
-                                  If FailOpen is true, the client request is forwarded to the upstream service
-                                  even if the server fails to respond. This field should not be
-                                  set in most cases.
-                                type: boolean
-                              responseTimeout:
+                                  API version of the referent.
+                                  If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
+                                minLength: 1
+                                type: string
+                              name:
                                 description: |-
-                                  ResponseTimeout sets how long the proxy should wait for responses.
-                                  Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
-                                  Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-                                  The string "infinity" is also a valid input and specifies no timeout.
-                                pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                                  Name of the referent.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referent.
+                                  If this field is not specifies, the namespace of the resource that targets the referent will be used.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                                minLength: 1
                                 type: string
                             type: object
+                          failOpen:
+                            description: |-
+                              If FailOpen is true, the client request is forwarded to the upstream service
+                              even if the server fails to respond. This field should not be
+                              set in most cases.
+                            type: boolean
                           mutationRules:
                             description: |-
                               MutationRules specifies what headers may be manipulated by a processing filter.
                               This set of rules makes it possible to control which modifications a filter may make.
+                              for Overrides is must be nil
                             properties:
                               allowAllRouting:
                                 description: |-
@@ -5054,6 +5076,14 @@ spec:
                                 - SKIP
                                 type: string
                             type: object
+                          responseTimeout:
+                            description: |-
+                              ResponseTimeout sets how long the proxy should wait for responses.
+                              Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
+                              Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                              The string "infinity" is also a valid input and specifies no timeout.
+                            pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                            type: string
                         type: object
                     type: object
                   health:
@@ -5655,7 +5685,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: extensionservices.projectcontour.io
 spec:
   preserveUnknownFields: false
@@ -6103,7 +6133,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: httpproxies.projectcontour.io
 spec:
   preserveUnknownFields: false
@@ -6572,63 +6602,100 @@ spec:
                     enableWebsockets:
                       description: Enables websocket support for the route.
                       type: boolean
-                    extProcPolicy:
-                      description: |-
-                        ExtProcPolicy updates the external processing policy that were set
-                        on the root HTTPProxy object for client requests/responses
+                    externalProcessing:
+                      description: ExternalProcessing override/disable the policy
+                        to act on HTTP traffic for the specific route in a flexible
+                        way.
                       properties:
                         disabled:
                           description: |-
-                            When true, this field disables the specific client request external processor
-                            for the scope of the policy.
-                            if both disabled and overrides are set. use disabled.
+                            When true, this field disables the external processor for the scope of the policy.
+                            - for global: no external processing will be append to the filter chain
+                            if both Disabled and Processor are set. use disabled.
                           type: boolean
-                        overrides:
-                          description: Overrides aspects of the configuration for
-                            this route.
+                        processor:
+                          description: Processor defines a external processing filter
+                            which allows an external service to act on HTTP traffic
+                            in a flexible way.
                           properties:
-                            grpcService:
-                              description: GRPCService configure the gRPC service
-                                that the filter will communicate with.
+                            allowModeOverride:
+                              description: |-
+                                If true, the filter config processingMode can be overridden by the response message from the external processing server `mode_override``.
+                                If false, `mode_override` API in the response message will be ignored.
+                              type: boolean
+                            extensionRef:
+                              description: ExtensionServiceRef specifies the extension
+                                resource that will handle the client requests.
                               properties:
-                                extensionRef:
-                                  description: ExtensionServiceRef specifies the extension
-                                    resource that will handle the client requests.
-                                  properties:
-                                    apiVersion:
-                                      description: |-
-                                        API version of the referent.
-                                        If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
-                                      minLength: 1
-                                      type: string
-                                    name:
-                                      description: |-
-                                        Name of the referent.
-                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      minLength: 1
-                                      type: string
-                                    namespace:
-                                      description: |-
-                                        Namespace of the referent.
-                                        If this field is not specifies, the namespace of the resource that targets the referent will be used.
-                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                                      minLength: 1
-                                      type: string
-                                  type: object
-                                failOpen:
+                                apiVersion:
                                   description: |-
-                                    If FailOpen is true, the client request is forwarded to the upstream service
-                                    even if the server fails to respond. This field should not be
-                                    set in most cases.
-                                  type: boolean
-                                responseTimeout:
-                                  description: |-
-                                    ResponseTimeout sets how long the proxy should wait for responses.
-                                    Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
-                                    Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-                                    The string "infinity" is also a valid input and specifies no timeout.
-                                  pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                                    API version of the referent.
+                                    If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
+                                  minLength: 1
                                   type: string
+                                name:
+                                  description: |-
+                                    Name of the referent.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  minLength: 1
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the referent.
+                                    If this field is not specifies, the namespace of the resource that targets the referent will be used.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                                  minLength: 1
+                                  type: string
+                              type: object
+                            failOpen:
+                              description: |-
+                                If FailOpen is true, the client request is forwarded to the upstream service
+                                even if the server fails to respond. This field should not be
+                                set in most cases.
+                              type: boolean
+                            mutationRules:
+                              description: |-
+                                MutationRules specifies what headers may be manipulated by a processing filter.
+                                This set of rules makes it possible to control which modifications a filter may make.
+                                for Overrides is must be nil
+                              properties:
+                                allowAllRouting:
+                                  description: |-
+                                    By default, certain headers that could affect processing of subsequent
+                                    filters or request routing cannot be modified. These headers are
+                                    ``host``, ``:authority``, ``:scheme``, and ``:method``.
+                                    Setting this parameter to true allows these headers to be modified as well.
+                                  type: boolean
+                                allowEnvoy:
+                                  description: |-
+                                    If true, allow modification of envoy internal headers. By default, these
+                                    start with ``x-envoy`` but this may be overridden in the ``Bootstrap`` configuration.
+                                    Default is false.
+                                  type: boolean
+                                disallowAll:
+                                  description: |-
+                                    If true, prevent modifications of all header values, regardless of any
+                                    other settings. A processing server may still override the ``:status``
+                                    of an HTTP response using an ``ImmediateResponse`` message.
+                                    Default is false.
+                                  type: boolean
+                                disallowIsError:
+                                  description: |-
+                                    If true, and if the rules in this list cause a header mutation to be
+                                    disallowed, then the filter using this configuration will terminate the
+                                    request with a 500 error. In addition, regardless of the setting of this
+                                    parameter, any attempt to set, add, or modify a disallowed header will
+                                    cause the ``rejected_header_mutations`` counter to be incremented.
+                                    Default is false.
+                                  type: boolean
+                                disallowSystem:
+                                  description: |-
+                                    If true, prevent modification of any system header, defined as a header
+                                    that starts with a ``:`` character, regardless of any other settings.
+                                    A processing server may still override the ``:status`` of an HTTP response
+                                    using an ``ImmediateResponse`` message.
+                                    Default is false.
+                                  type: boolean
                               type: object
                             processingMode:
                               description: |-
@@ -6698,6 +6765,14 @@ spec:
                                   - SKIP
                                   type: string
                               type: object
+                            responseTimeout:
+                              description: |-
+                                ResponseTimeout sets how long the proxy should wait for responses.
+                                Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
+                                Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                                The string "infinity" is also a valid input and specifies no timeout.
+                              pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                              type: string
                           type: object
                       type: object
                     healthCheckPolicy:
@@ -8401,72 +8476,62 @@ spec:
                     - allowMethods
                     - allowOrigin
                     type: object
-                  extProc:
+                  externalProcessing:
                     description: |-
-                      ExtProc which allow to act on HTTP traffic in a flexible way
-                      and the policy for fine-grained at VirtualHost level.
+                      ExternalProcessing defines a external processing filter and the policy
+                      to act on HTTP traffic in a flexible way.
                     properties:
                       disabled:
                         description: |-
-                          When true, this field disables the external processor: (neither global nor virtualHost)
-                          for the scope of the policy.
+                          When true, this field disables the external processor for the scope of the policy.
+                          - for global: no external processing will be append to the filter chain
                           if both Disabled and Processor are set. use disabled.
-                          it just work for virtualhost
                         type: boolean
                       processor:
-                        description: |-
-                          Processor defines a processing filter list,and each filter in the list
-                          will be added to the corresponding processing Priority in ascending order of it's Priority within the same phase.
-                          If no phase is specified, it will be added before the Router.
-                          If no Priority is specified, the filters will be added in the order they appear in the list.
+                        description: Processor defines a external processing filter
+                          which allows an external service to act on HTTP traffic
+                          in a flexible way.
                         properties:
-                          grpcService:
-                            description: GRPCService configure the gRPC service that
-                              the filter will communicate with.
+                          allowModeOverride:
+                            description: |-
+                              If true, the filter config processingMode can be overridden by the response message from the external processing server `mode_override``.
+                              If false, `mode_override` API in the response message will be ignored.
+                            type: boolean
+                          extensionRef:
+                            description: ExtensionServiceRef specifies the extension
+                              resource that will handle the client requests.
                             properties:
-                              extensionRef:
-                                description: ExtensionServiceRef specifies the extension
-                                  resource that will handle the client requests.
-                                properties:
-                                  apiVersion:
-                                    description: |-
-                                      API version of the referent.
-                                      If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
-                                    minLength: 1
-                                    type: string
-                                  name:
-                                    description: |-
-                                      Name of the referent.
-                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                    minLength: 1
-                                    type: string
-                                  namespace:
-                                    description: |-
-                                      Namespace of the referent.
-                                      If this field is not specifies, the namespace of the resource that targets the referent will be used.
-                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                                    minLength: 1
-                                    type: string
-                                type: object
-                              failOpen:
+                              apiVersion:
                                 description: |-
-                                  If FailOpen is true, the client request is forwarded to the upstream service
-                                  even if the server fails to respond. This field should not be
-                                  set in most cases.
-                                type: boolean
-                              responseTimeout:
+                                  API version of the referent.
+                                  If this field is not specified, the default "projectcontour.io/v1alpha1" will be used
+                                minLength: 1
+                                type: string
+                              name:
                                 description: |-
-                                  ResponseTimeout sets how long the proxy should wait for responses.
-                                  Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
-                                  Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-                                  The string "infinity" is also a valid input and specifies no timeout.
-                                pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                                  Name of the referent.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referent.
+                                  If this field is not specifies, the namespace of the resource that targets the referent will be used.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                                minLength: 1
                                 type: string
                             type: object
+                          failOpen:
+                            description: |-
+                              If FailOpen is true, the client request is forwarded to the upstream service
+                              even if the server fails to respond. This field should not be
+                              set in most cases.
+                            type: boolean
                           mutationRules:
                             description: |-
                               MutationRules specifies what headers may be manipulated by a processing filter.
                               This set of rules makes it possible to control which modifications a filter may make.
+                              for Overrides is must be nil
                             properties:
                               allowAllRouting:
                                 description: |-
@@ -8574,6 +8639,14 @@ spec:
                                 - SKIP
                                 type: string
                             type: object
+                          responseTimeout:
+                            description: |-
+                              ResponseTimeout sets how long the proxy should wait for responses.
+                              Timeout durations are expressed in the Go [Duration format](https://godoc.org/time#ParseDuration).
+                              Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                              The string "infinity" is also a valid input and specifies no timeout.
+                            pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                            type: string
                         type: object
                     type: object
                   fqdn:
@@ -9409,6 +9482,7 @@ spec:
                           x-kubernetes-list-type: atomic
                       type: object
                     type: array
+                    x-kubernetes-list-type: atomic
                 type: object
             type: object
         required:
@@ -9424,7 +9498,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: tlscertificatedelegations.projectcontour.io
 spec:
   preserveUnknownFields: false
@@ -10129,7 +10203,7 @@ spec:
         - --log-level info
         command:
         - envoy
-        image: docker.io/envoyproxy/envoy:v1.29.1
+        image: docker.io/envoyproxy/envoy:v1.30.1
         imagePullPolicy: IfNotPresent
         name: envoy
         env:
