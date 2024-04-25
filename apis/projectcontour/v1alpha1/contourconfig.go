@@ -96,10 +96,11 @@ type ContourConfigurationSpec struct {
 	// If defined, this will be used as the default for all services.
 	// +optional
 	GlobalOutlierDetection *contour_v1.OutlierDetection `json:"outlierDetection,omitempty"`
-	// GlobalExtProc allows envoys external processing filter
+
+	// GlobalExternalProcessing allows envoys external processing filter
 	// to be enabled for all virtual hosts.
 	// +optional
-	GlobalExtProc *contour_v1.ExternalProcessor `json:"globalExtProc,omitempty"`
+	GlobalExternalProcessing *contour_v1.ExternalProcessing `json:"globalExternalProcessing,omitempty"`
 }
 
 // FeatureFlags defines the set of feature flags
