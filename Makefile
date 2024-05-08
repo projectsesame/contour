@@ -138,9 +138,9 @@ multiarch-build:
 		--build-arg "BUILD_CGO_ENABLED=$(BUILD_CGO_ENABLED)" \
 		--build-arg "BUILD_EXTRA_GO_LDFLAGS=$(BUILD_EXTRA_GO_LDFLAGS)" \
 		--build-arg "BUILD_GOEXPERIMENT=$(BUILD_GOEXPERIMENT)" \
-		--label "commit.sync.upstream=23a029" \
+		--label "commit.sync.upstream=6558591" \
 		$(DOCKER_BUILD_LABELS) \
-		-t release-ci.daocloud.io/skoala/contour:v1.28.1-23a029  \
+		-t release.daocloud.io/skoala/contour:v1.28.3-6558591  \
 		$(shell pwd) \
 		--push
 
