@@ -33,6 +33,3 @@ ls "${TEMPDIR}"/*.yaml | xargs cat | sed '/^$/d' \
   | awk '/group: projectcontour.io/{print "  preserveUnknownFields: false"}1' \
   > "${REPO}/examples/contour/01-crds.yaml"
 
-exec go run sigs.k8s.io/controller-tools/cmd/controller-gen \
-    "object:headerFile=${HEADER}" \
-    "paths=${PATHS}"

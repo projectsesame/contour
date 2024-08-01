@@ -260,7 +260,7 @@ generate-crd-yaml:
 .PHONY: generate-gateway-yaml
 generate-gateway-yaml:
 	@echo "Generating Gateway API CRD YAML documents..."
-	@GATEWAY_API_VERSION=$(GATEWAY_API_VERSION) ./hack/generate-gateway-yaml.sh
+	@GATEWAY_API_VERSION=$(GATEWAY_API_VERSION)  https_proxy=https://127.0.0.1:7890   ./hack/generate-gateway-yaml.sh
 
 
 .PHONY: generate-api-docs
