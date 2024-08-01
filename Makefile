@@ -44,7 +44,7 @@ endif
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Base build image to use.
-BUILD_BASE_IMAGE ?= golang:1.22.5@sha256:829eff99a4b2abffe68f6a3847337bf6455d69d17e49ec1a97dac78834754bd6
+BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.22.5
 
 # Enable build with CGO.
 BUILD_CGO_ENABLED ?= 0
@@ -138,9 +138,9 @@ multiarch-build:
 		--build-arg "BUILD_CGO_ENABLED=$(BUILD_CGO_ENABLED)" \
 		--build-arg "BUILD_EXTRA_GO_LDFLAGS=$(BUILD_EXTRA_GO_LDFLAGS)" \
 		--build-arg "BUILD_GOEXPERIMENT=$(BUILD_GOEXPERIMENT)" \
-		--label "commit.sync.upstream=6558591" \
+		--label "commit.sync.upstream=3e57486" \
 		$(DOCKER_BUILD_LABELS) \
-		-t release.daocloud.io/skoala/contour:v1.28.3-6558591  \
+		-t release-ci.daocloud.io/skoala/contour:v1.30.0-3e57486  \
 		$(shell pwd) \
 		--push
 
