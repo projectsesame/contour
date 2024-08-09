@@ -81,6 +81,7 @@ func Default(namespace, name string) *Contour {
 			ContourPodAnnotations: map[string]string{},
 			EnvoyPodLabels:        map[string]string{},
 			ContourPodLabels:      map[string]string{},
+			CertLifetime:          365,
 		},
 	}
 }
@@ -265,6 +266,10 @@ type ContourSpec struct {
 	// DisabledFeatures defines an array of resources that will be ignored by
 	// contour reconciler.
 	DisabledFeatures []contour_v1.Feature
+
+	// CertLifetime is the number of days for which certificates will be valid.
+	// default to 365
+	CertLifetime uint32
 }
 
 func NamespacesToStrings(ns []contour_v1.Namespace) []string {
