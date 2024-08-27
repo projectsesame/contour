@@ -1056,6 +1056,9 @@ func (s *Server) setupGatewayAPI(contourConfiguration contour_v1alpha1.ContourCo
 			"configmaps":         &core_v1.ConfigMap{},
 		}
 
+		var handler cache.ResourceEventHandler = eventHandler
+		handler = k8s.NewNamespaceFilter(contourConfiguration.HTTPProxy.RootNamespaces, eventHandler)
+
 		for _, disabled := range s.ctx.disabledFeatures {
 			delete(resources, disabled)
 
@@ -1067,6 +1070,12 @@ func (s *Server) setupGatewayAPI(contourConfiguration contour_v1alpha1.ContourCo
 		}
 
 		for name, obj := range resources {
+			if name == "gateways" {
+				if err := s.informOnResource(obj, handler); err != nil {
+					s.log.WithError(err).WithField("resource", name).Fatal("failed to create informer")
+				}
+				continue
+			}
 			if err := s.informOnResource(obj, eventHandler); err != nil {
 				s.log.WithError(err).WithField("resource", name).Fatal("failed to create informer")
 			}

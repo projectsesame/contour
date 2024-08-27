@@ -114,7 +114,7 @@ func IsObjectEqual(oldObj, newObj client.Object) (bool, error) {
 		return isGenerationEqual(oldObj, newObj), nil
 
 	case *gatewayapi_v1.GatewayClass,
-		*gatewayapi_v1.Gateway,
+		//*gatewayapi_v1.Gateway,
 		*gatewayapi_v1beta1.ReferenceGrant,
 		*gatewayapi_v1.HTTPRoute,
 		*gatewayapi_v1alpha2.TLSRoute,
@@ -122,6 +122,8 @@ func IsObjectEqual(oldObj, newObj client.Object) (bool, error) {
 		*gatewayapi_v1alpha2.TCPRoute,
 		*gatewayapi_v1alpha3.BackendTLSPolicy:
 		return isGenerationEqual(oldObj, newObj), nil
+	case *gatewayapi_v1.Gateway:
+		return isGenerationEqual(oldObj, newObj) && isIPEqual(oldObj, newObj), nil
 
 	// Slow path: compare the content of the objects.
 	case *contour_v1.HTTPProxy,
@@ -159,6 +161,20 @@ func IsObjectEqual(oldObj, newObj client.Object) (bool, error) {
 
 func isGenerationEqual(a, b client.Object) bool {
 	return a.GetGeneration() == b.GetGeneration()
+}
+
+func isIPEqual(a, b client.Object) bool {
+	old := a.(*gatewayapi_v1.Gateway)
+	newObj := b.(*gatewayapi_v1.Gateway)
+	if old != nil && newObj != nil && len(old.Status.Addresses) > 0 && len(newObj.Status.Addresses) > 0 {
+		return old.Status.Addresses[0].Value == newObj.Status.Addresses[0].Value
+	}
+
+	if len(old.Status.Addresses) == 0 || len(newObj.Status.Addresses) == 0 {
+		return false
+	}
+
+	return true
 }
 
 func isResourceVersionEqual(a, b client.Object) bool {
