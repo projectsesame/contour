@@ -199,7 +199,8 @@ func desiredContainers(contour *model.Contour, contourImage, envoyImage string) 
 			Image:           envoyImage,
 			ImagePullPolicy: core_v1.PullIfNotPresent,
 			Command: []string{
-				"envoy",
+				// "envoy",
+				"/usr/local/bin/run_envoy.sh",
 			},
 			Args: []string{
 				"-c",
