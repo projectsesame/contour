@@ -244,7 +244,7 @@ func routeExtProcOverrides(overrides *dag.ExtProcOverrides) *anypb.Any {
 			Override: &envoy_filter_http_ext_proc_v3.ExtProcPerRoute_Overrides{
 				Overrides: &envoy_filter_http_ext_proc_v3.ExtProcOverrides{
 					ProcessingMode: pm,
-					GrpcService:    GrpcService(overrides.ExtProcService.Name, overrides.ExtProcService.SNI, *overrides.ResponseTimeout),
+					GrpcService:    grpcService(overrides.ExtProcService.Name, overrides.ExtProcService.SNI, *overrides.ResponseTimeout),
 				},
 			},
 		},

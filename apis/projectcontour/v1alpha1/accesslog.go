@@ -158,6 +158,7 @@ var envoyComplexOperators = map[string]struct {
 	"ENVIRONMENT":       {},
 	"METADATA":          {},
 	"REQ":               {},
+	"DYNAMIC_METADATA":  {},
 	"REQ_WITHOUT_QUERY": {},
 	"RESP":              {},
 	"START_TIME": {

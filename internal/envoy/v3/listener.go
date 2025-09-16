@@ -883,7 +883,7 @@ func FilterExtProc(extProc *dag.ExtProc) *envoy_filter_network_http_connection_m
 	}
 
 	extProcConfig := envoy_filter_http_ext_proc_v3.ExternalProcessor{
-		GrpcService:            GrpcService(extProc.ExtProcService.Name, extProc.ExtProcService.SNI, extProc.ResponseTimeout),
+		GrpcService:            grpcService(extProc.ExtProcService.Name, extProc.ExtProcService.SNI, extProc.ResponseTimeout),
 		FailureModeAllow:       extProc.FailOpen,
 		ProcessingMode:         makeProcessMode(extProc.ProcessingMode),
 		MessageTimeout:         envoy.Timeout(extProc.ResponseTimeout),
