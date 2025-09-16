@@ -41,7 +41,6 @@ func OverlayOnDefaults(spec contour_v1alpha1.ContourConfigurationSpec) (contour_
 func Defaults() contour_v1alpha1.ContourConfigurationSpec {
 	return contour_v1alpha1.ContourConfigurationSpec{
 		XDSServer: &contour_v1alpha1.XDSServerConfig{
-			Type:    contour_v1alpha1.EnvoyServerType,
 			Address: "0.0.0.0",
 			Port:    8001,
 			TLS: &contour_v1alpha1.TLS{
@@ -128,8 +127,9 @@ func Defaults() contour_v1alpha1.ContourConfigurationSpec {
 				},
 			},
 			Network: &contour_v1alpha1.NetworkParameters{
-				XffNumTrustedHops: ptr.To(uint32(0)),
-				EnvoyAdminPort:    ptr.To(9001),
+				XffNumTrustedHops:         ptr.To(uint32(0)),
+				EnvoyAdminPort:            ptr.To(9001),
+				EnvoyStripTrailingHostDot: ptr.To(false),
 			},
 			EnableStatPrefix: ptr.To(false),
 		},

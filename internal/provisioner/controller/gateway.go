@@ -373,6 +373,10 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				contourModel.Spec.EnvoyDNSLookupFamily = envoyParams.DNSLookupFamily
 			}
 
+			if envoyParams.OverloadMaxDownstreamConnections > 0 {
+				contourModel.Spec.EnvoyMaxDownstreamConnections = envoyParams.OverloadMaxDownstreamConnections
+			}
+
 		}
 	}
 

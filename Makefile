@@ -40,7 +40,7 @@ endif
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Base build image to use.
-BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.22.5
+BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.25.1
 
 # Enable build with CGO.
 BUILD_CGO_ENABLED ?= 0
@@ -196,7 +196,7 @@ lint-codespell:
 .PHONY: lint-golint
 lint-golint:
 	@echo Running Go linter ...
-	@./hack/golangci-lint run --build-tags=e2e,conformance,tools,gcp,oidc,none
+	@./hack/golangci-lint run --build-tags=e2e,conformance,gcp,oidc,none
 
 .PHONY: lint-yamllint
 lint-yamllint:

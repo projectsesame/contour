@@ -32,6 +32,7 @@ import (
 	envoy_config_overload_v3 "github.com/envoyproxy/go-control-plane/envoy/config/overload/v3"
 	envoy_access_logger_file_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
 	envoy_regex_engines_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/regex_engines/v3"
+	envoy_downstream_connections_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/resource_monitors/downstream_connections/v3"
 	envoy_fixed_heap_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/resource_monitors/fixed_heap/v3"
 	envoy_transport_socket_tls_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	envoy_service_discovery_v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -47,9 +48,9 @@ import (
 )
 
 // WriteBootstrap writes bootstrap configuration to files.
-func WriteBootstrap(c *envoy.BootstrapConfig) error {
+func (e *EnvoyGen) WriteBootstrap(c *envoy.BootstrapConfig) error {
 	// Create Envoy bootstrap config and associated resource files.
-	steps, err := bootstrap(c)
+	steps, err := e.bootstrap(c)
 	if err != nil {
 		return err
 	}
@@ -77,13 +78,13 @@ func WriteBootstrap(c *envoy.BootstrapConfig) error {
 type bootstrapf func(*envoy.BootstrapConfig) (string, proto.Message)
 
 // bootstrap creates a new v3 bootstrap configuration and associated resource files.
-func bootstrap(c *envoy.BootstrapConfig) ([]bootstrapf, error) {
+func (e *EnvoyGen) bootstrap(c *envoy.BootstrapConfig) ([]bootstrapf, error) {
 	var steps []bootstrapf
 
 	if c.GrpcClientCert == "" && c.GrpcClientKey == "" && c.GrpcCABundle == "" {
 		steps = append(steps,
 			func(*envoy.BootstrapConfig) (string, proto.Message) {
-				return c.Path, bootstrapConfig(c)
+				return c.Path, e.bootstrapConfig(c)
 			})
 
 		return steps, nil
@@ -122,7 +123,7 @@ func bootstrap(c *envoy.BootstrapConfig) ([]bootstrapf, error) {
 
 		steps = append(steps,
 			func(*envoy.BootstrapConfig) (string, proto.Message) {
-				b := bootstrapConfig(c)
+				b := e.bootstrapConfig(c)
 				b.StaticResources.Clusters[0].TransportSocket = UpstreamTLSTransportSocket(
 					upstreamFileTLSContext(c))
 				return c.Path, b
@@ -150,7 +151,7 @@ func bootstrap(c *envoy.BootstrapConfig) ([]bootstrapf, error) {
 			return sdsValidationContextPath, validationContextSdsSecretConfig(c)
 		},
 		func(*envoy.BootstrapConfig) (string, proto.Message) {
-			b := bootstrapConfig(c)
+			b := e.bootstrapConfig(c)
 			b.StaticResources.Clusters[0].TransportSocket = UpstreamTLSTransportSocket(
 				upstreamSdsTLSContext(sdsTLSCertificatePath, sdsValidationContextPath))
 			return c.Path, b
@@ -160,7 +161,7 @@ func bootstrap(c *envoy.BootstrapConfig) ([]bootstrapf, error) {
 	return steps, nil
 }
 
-func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootstrap {
+func (e *EnvoyGen) bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootstrap {
 	bootstrap := &envoy_config_bootstrap_v3.Bootstrap{
 		LayeredRuntime: &envoy_config_bootstrap_v3.LayeredRuntime{
 			Layers: []*envoy_config_bootstrap_v3.RuntimeLayer{
@@ -169,7 +170,7 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootst
 					LayerSpecifier: &envoy_config_bootstrap_v3.RuntimeLayer_RtdsLayer_{
 						RtdsLayer: &envoy_config_bootstrap_v3.RuntimeLayer_RtdsLayer{
 							Name:       DynamicRuntimeLayerName,
-							RtdsConfig: ConfigSource("contour"),
+							RtdsConfig: e.GetConfigSource(),
 						},
 					},
 				},
@@ -187,8 +188,8 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootst
 			},
 		},
 		DynamicResources: &envoy_config_bootstrap_v3.Bootstrap_DynamicResources{
-			LdsConfig: ConfigSource("contour"),
-			CdsConfig: ConfigSource("contour"),
+			LdsConfig: e.GetConfigSource(),
+			CdsConfig: e.GetConfigSource(),
 		},
 		StaticResources: &envoy_config_bootstrap_v3.Bootstrap_StaticResources{
 			Clusters: []*envoy_config_cluster_v3.Cluster{{
@@ -196,7 +197,7 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootst
 				Name:                 "contour",
 				AltStatName:          strings.Join([]string{c.Namespace, "contour", strconv.Itoa(c.GetXdsGRPCPort())}, "_"),
 				ConnectTimeout:       durationpb.New(5 * time.Second),
-				ClusterDiscoveryType: ClusterDiscoveryTypeForAddress(c.GetXdsAddress(), envoy_config_cluster_v3.Cluster_STRICT_DNS),
+				ClusterDiscoveryType: clusterDiscoveryTypeForAddress(c.GetXdsAddress(), envoy_config_cluster_v3.Cluster_STRICT_DNS),
 				LbPolicy:             envoy_config_cluster_v3.Cluster_ROUND_ROBIN,
 				LoadAssignment: &envoy_config_endpoint_v3.ClusterLoadAssignment{
 					ClusterName: "contour",
@@ -233,12 +234,12 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootst
 				Name:                 "envoy-admin",
 				AltStatName:          strings.Join([]string{c.Namespace, "envoy-admin", strconv.Itoa(c.GetAdminPort())}, "_"),
 				ConnectTimeout:       durationpb.New(250 * time.Millisecond),
-				ClusterDiscoveryType: ClusterDiscoveryTypeForAddress(c.GetAdminAddress(), envoy_config_cluster_v3.Cluster_STATIC),
+				ClusterDiscoveryType: clusterDiscoveryTypeForAddress(c.GetAdminAddress(), envoy_config_cluster_v3.Cluster_STATIC),
 				LbPolicy:             envoy_config_cluster_v3.Cluster_ROUND_ROBIN,
 				LoadAssignment: &envoy_config_endpoint_v3.ClusterLoadAssignment{
 					ClusterName: "envoy-admin",
 					Endpoints: Endpoints(
-						UnixSocketAddress(c.GetAdminAddress()),
+						unixSocketAddress(c.GetAdminAddress()),
 					),
 				},
 			}},
@@ -249,53 +250,17 @@ func bootstrapConfig(c *envoy.BootstrapConfig) *envoy_config_bootstrap_v3.Bootst
 		},
 		Admin: &envoy_config_bootstrap_v3.Admin{
 			AccessLog: adminAccessLog(c.GetAdminAccessLogPath()),
-			Address:   UnixSocketAddress(c.GetAdminAddress()),
+			Address:   unixSocketAddress(c.GetAdminAddress()),
 		},
 	}
-	if c.MaximumHeapSizeBytes > 0 {
+	if c.MaximumHeapSizeBytes > 0 || c.GlobalDownstreamConnectionLimit > 0 {
 		bootstrap.OverloadManager = &envoy_config_overload_v3.OverloadManager{
 			RefreshInterval: durationpb.New(250 * time.Millisecond),
-			ResourceMonitors: []*envoy_config_overload_v3.ResourceMonitor{
-				{
-					Name: "envoy.resource_monitors.fixed_heap",
-					ConfigType: &envoy_config_overload_v3.ResourceMonitor_TypedConfig{
-						TypedConfig: protobuf.MustMarshalAny(
-							&envoy_fixed_heap_v3.FixedHeapConfig{
-								MaxHeapSizeBytes: c.MaximumHeapSizeBytes,
-							}),
-					},
-				},
-			},
-			Actions: []*envoy_config_overload_v3.OverloadAction{
-				{
-					Name: "envoy.overload_actions.shrink_heap",
-					Triggers: []*envoy_config_overload_v3.Trigger{
-						{
-							Name: "envoy.resource_monitors.fixed_heap",
-							TriggerOneof: &envoy_config_overload_v3.Trigger_Threshold{
-								Threshold: &envoy_config_overload_v3.ThresholdTrigger{
-									Value: 0.95,
-								},
-							},
-						},
-					},
-				},
-				{
-					Name: "envoy.overload_actions.stop_accepting_requests",
-					Triggers: []*envoy_config_overload_v3.Trigger{
-						{
-							Name: "envoy.resource_monitors.fixed_heap",
-							TriggerOneof: &envoy_config_overload_v3.Trigger_Threshold{
-								Threshold: &envoy_config_overload_v3.ThresholdTrigger{
-									Value: 0.98,
-								},
-							},
-						},
-					},
-				},
-			},
 		}
+		includeMaxHeapMonitoring(bootstrap, c.MaximumHeapSizeBytes)
+		includeMaxConnectionMonitoring(bootstrap, c.GlobalDownstreamConnectionLimit)
 	}
+
 	return bootstrap
 }
 
@@ -360,6 +325,22 @@ func upstreamSdsTLSContext(certificateSdsFile, validationSdsFile string) *envoy_
 		CommonTlsContext: &envoy_transport_socket_tls_v3.CommonTlsContext{
 			TlsParams: &envoy_transport_socket_tls_v3.TlsParameters{
 				TlsMaximumProtocolVersion: envoy_transport_socket_tls_v3.TlsParameters_TLSv1_3,
+				// To allow use of ECDSA P-521 certs for xDS the default signature algorithms list is overridden.
+				// This override is a temporary workaround until BoringSSL includes "ecdsa_secp521r1_sha512" in the default list.
+				// The default list can be found here:
+				// https://github.com/google/boringssl/blob/45a865d6682a7bc989143d73466ade7728959324/ssl/extensions.cc#L275-L293
+				SignatureAlgorithms: []string{
+					"ecdsa_secp256r1_sha256",
+					"rsa_pss_rsae_sha256",
+					"rsa_pkcs1_sha256",
+					"ecdsa_secp384r1_sha384",
+					"rsa_pss_rsae_sha384",
+					"rsa_pkcs1_sha384",
+					"ecdsa_secp521r1_sha512",
+					"rsa_pss_rsae_sha512",
+					"rsa_pkcs1_sha512",
+					"rsa_pkcs1_sha1",
+				},
 			},
 			TlsCertificateSdsSecretConfigs: []*envoy_transport_socket_tls_v3.SdsSecretConfig{{
 				Name: "contour_xds_tls_certificate",
@@ -443,5 +424,70 @@ func validationContextSdsSecretConfig(c *envoy.BootstrapConfig) *envoy_service_d
 
 	return &envoy_service_discovery_v3.DiscoveryResponse{
 		Resources: []*anypb.Any{protobuf.MustMarshalAny(secret)},
+	}
+}
+
+// includeMaxHeapMonitoring appends the fixed heap resource monitor and corresponding
+// overload actions to the overload manager
+func includeMaxHeapMonitoring(bootstrap *envoy_config_bootstrap_v3.Bootstrap, maxHeapBytes uint64) {
+	if maxHeapBytes > 0 {
+		bootstrap.OverloadManager.ResourceMonitors = append(bootstrap.OverloadManager.ResourceMonitors,
+			&envoy_config_overload_v3.ResourceMonitor{
+				Name: "envoy.resource_monitors.fixed_heap",
+				ConfigType: &envoy_config_overload_v3.ResourceMonitor_TypedConfig{
+					TypedConfig: protobuf.MustMarshalAny(
+						&envoy_fixed_heap_v3.FixedHeapConfig{
+							MaxHeapSizeBytes: maxHeapBytes,
+						}),
+				},
+			},
+		)
+
+		bootstrap.OverloadManager.Actions = append(bootstrap.OverloadManager.Actions,
+			&envoy_config_overload_v3.OverloadAction{
+				Name: "envoy.overload_actions.shrink_heap",
+				Triggers: []*envoy_config_overload_v3.Trigger{
+					{
+						Name: "envoy.resource_monitors.fixed_heap",
+						TriggerOneof: &envoy_config_overload_v3.Trigger_Threshold{
+							Threshold: &envoy_config_overload_v3.ThresholdTrigger{
+								Value: 0.95,
+							},
+						},
+					},
+				},
+			},
+			&envoy_config_overload_v3.OverloadAction{
+				Name: "envoy.overload_actions.stop_accepting_requests",
+				Triggers: []*envoy_config_overload_v3.Trigger{
+					{
+						Name: "envoy.resource_monitors.fixed_heap",
+						TriggerOneof: &envoy_config_overload_v3.Trigger_Threshold{
+							Threshold: &envoy_config_overload_v3.ThresholdTrigger{
+								Value: 0.98,
+							},
+						},
+					},
+				},
+			},
+		)
+	}
+}
+
+// includeMaxConnectionMonitoring appends the downstream connection resource monitor to
+// the overload manager
+func includeMaxConnectionMonitoring(bootstrap *envoy_config_bootstrap_v3.Bootstrap, maxConns int64) {
+	if maxConns > 0 {
+		bootstrap.OverloadManager.ResourceMonitors = append(bootstrap.OverloadManager.ResourceMonitors,
+			&envoy_config_overload_v3.ResourceMonitor{
+				Name: "envoy.resource_monitors.global_downstream_max_connections",
+				ConfigType: &envoy_config_overload_v3.ResourceMonitor_TypedConfig{
+					TypedConfig: protobuf.MustMarshalAny(
+						&envoy_downstream_connections_v3.DownstreamConnectionsConfig{
+							MaxActiveDownstreamConnections: maxConns,
+						}),
+				},
+			},
+		)
 	}
 }

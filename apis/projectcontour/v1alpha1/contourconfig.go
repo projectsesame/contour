@@ -86,10 +86,6 @@ type ContourConfigurationSpec struct {
 	Tracing *TracingConfig `json:"tracing,omitempty"`
 
 	// FeatureFlags defines toggle to enable new contour features.
-	// Available toggles are:
-	// useEndpointSlices - Configures contour to fetch endpoint data
-	// from k8s endpoint slices. defaults to true,
-	// If false then reads endpoint data from the k8s endpoints.
 	FeatureFlags FeatureFlags `json:"featureFlags,omitempty"`
 
 	// GlobalOutlierDetection defines the configuration for outlier detection on all services.
@@ -106,16 +102,6 @@ type ContourConfigurationSpec struct {
 // FeatureFlags defines the set of feature flags
 // to toggle new contour features.
 type FeatureFlags []string
-
-// XDSServerType is the type of xDS server implementation.
-type XDSServerType string
-
-const (
-	// Use Contour's xDS server (deprecated).
-	ContourServerType XDSServerType = "contour"
-	// Use the upstream `go-control-plane`-based xDS server.
-	EnvoyServerType XDSServerType = "envoy"
-)
 
 type CircuitBreakers struct {
 	// The maximum number of connections that a single Envoy instance allows to the Kubernetes Service; defaults to 1024.
@@ -138,17 +124,6 @@ type CircuitBreakers struct {
 
 // XDSServerConfig holds the config for the Contour xDS server.
 type XDSServerConfig struct {
-	// Defines the XDSServer to use for `contour serve`.
-	//
-	// Values: `envoy` (default), `contour (deprecated)`.
-	//
-	// Other values will produce an error.
-	//
-	// Deprecated: this field will be removed in a future release when
-	// the `contour` xDS server implementation is removed.
-	// +optional
-	Type XDSServerType `json:"type,omitempty"`
-
 	// Defines the xDS gRPC API address which Contour will serve.
 	//
 	// Contour's default is "0.0.0.0".
@@ -337,6 +312,16 @@ type EnvoyConfig struct {
 	// Set StatPrefix on envoy routes
 	// +optional
 	EnableStatPrefix *bool `json:"enableStatPrefix"`
+
+	// OMEnforcedHealth defines the endpoint Envoy uses to serve health checks with
+	// the envoy overload manager actions, such as global connection limits, enforced.
+	//
+	// The configured values must be different from the endpoints
+	// configured by [EnvoyConfig.Metrics] and [EnvoyConfig.Health]
+	//
+	// This is disabled by default
+	// +optional
+	OMEnforcedHealth *HealthConfig `json:"omEnforcedHealth,omitempty"`
 }
 
 // DebugConfig contains Contour specific troubleshooting options.
@@ -361,6 +346,10 @@ type EnvoyListenerConfig struct {
 	// Contour's default is false.
 	// +optional
 	UseProxyProto *bool `json:"useProxyProtocol,omitempty"`
+
+	// Compression defines configuration related to compression in the default HTTP Listener filters.
+	// +optional
+	Compression *EnvoyCompression `json:"compression,omitempty"`
 
 	// DisableAllowChunkedLength disables the RFC-compliant Envoy behavior to
 	// strip the "Content-Length" header if "Transfer-Encoding: chunked" is
@@ -771,6 +760,19 @@ type NetworkParameters struct {
 	// Contour's default is 9001.
 	// +optional
 	EnvoyAdminPort *int `json:"adminPort,omitempty"`
+
+	// EnvoyStripTrailingHostDot defines if trailing dot of the host should be removed from host/authority header
+	// before any processing of request by HTTP filters or routing. This
+	// affects the upstream host header. Without setting this option to true, incoming
+	// requests with host example.com. will not match against route with domains
+	// match set to example.com.
+	//
+	// See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto?highlight=strip_trailing_host_dot
+	// for more information.
+	//
+	// Contour's default is false.
+	// +optional
+	EnvoyStripTrailingHostDot *bool `json:"stripTrailingHostDot,omitempty"`
 }
 
 // RateLimitServiceConfig defines properties of a global Rate Limit Service.

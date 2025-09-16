@@ -104,6 +104,9 @@ type Deployment struct {
 	EnvoyExtraVolumes      []core_v1.Volume
 	EnvoyExtraVolumeMounts []core_v1.VolumeMount
 
+	// Optional additional args to pass to the bootstrap subcommand
+	ContourBootstrapExtraArgs []string
+
 	// Ratelimit deployment.
 	RateLimitDeployment       *apps_v1.Deployment
 	RateLimitService          *core_v1.Service
@@ -269,22 +272,22 @@ func (d *Deployment) UnmarshalResources() error {
 }
 
 // Common case of updating object if exists, create otherwise.
-func (d *Deployment) ensureResource(new, existing client.Object) error {
-	if err := d.client.Get(context.TODO(), client.ObjectKeyFromObject(new), existing); err != nil {
+func (d *Deployment) ensureResource(newResource, existingResource client.Object) error {
+	if err := d.client.Get(context.TODO(), client.ObjectKeyFromObject(newResource), existingResource); err != nil {
 		if api_errors.IsNotFound(err) {
-			return d.client.Create(context.TODO(), new)
+			return d.client.Create(context.TODO(), newResource)
 		}
 		return err
 	}
-	new.SetResourceVersion(existing.GetResourceVersion())
+	newResource.SetResourceVersion(existingResource.GetResourceVersion())
 	// If a core_v1.Service, pass along existing cluster IP and healthcheck node port.
-	if newS, ok := new.(*core_v1.Service); ok {
-		existingS := existing.(*core_v1.Service)
+	if newS, ok := newResource.(*core_v1.Service); ok {
+		existingS := existingResource.(*core_v1.Service)
 		newS.Spec.ClusterIP = existingS.Spec.ClusterIP
 		newS.Spec.ClusterIPs = existingS.Spec.ClusterIPs
 		newS.Spec.HealthCheckNodePort = existingS.Spec.HealthCheckNodePort
 	}
-	return d.client.Update(context.TODO(), new)
+	return d.client.Update(context.TODO(), newResource)
 }
 
 func (d *Deployment) EnsureNamespace() error {
@@ -478,14 +481,20 @@ func (d *Deployment) EnsureResourcesForLocalContour() error {
 
 	// Generate bootstrap config with Contour local address and plaintext
 	// client config.
-	bootstrapCmd := exec.Command( // nolint:gosec
-		d.contourBin,
+	bootstrapCmdArgs := []string{
 		"bootstrap",
 		bFile.Name(),
-		"--xds-address="+d.localContourHost,
-		"--xds-port="+d.localContourPort,
+		"--xds-address=" + d.localContourHost,
+		"--xds-port=" + d.localContourPort,
 		"--xds-resource-version=v3",
 		"--admin-address=/admin/admin.sock",
+	}
+
+	bootstrapCmdArgs = append(bootstrapCmdArgs, d.ContourBootstrapExtraArgs...)
+
+	bootstrapCmd := exec.Command( // nolint:gosec
+		d.contourBin,
+		bootstrapCmdArgs...,
 	)
 
 	session, err := gexec.Start(bootstrapCmd, d.cmdOutputWriter, d.cmdOutputWriter)
@@ -493,7 +502,7 @@ func (d *Deployment) EnsureResourcesForLocalContour() error {
 		return err
 	}
 
-	session.Wait("2s")
+	session.Wait("3s")
 	bootstrapContents, err := io.ReadAll(bFile)
 	if err != nil {
 		return err
@@ -712,7 +721,7 @@ func (d *Deployment) StopLocalContour(contourCmd *gexec.Session, configFile stri
 	// a minute should be more than enough to avoid them.
 	logs := contourCmd.Terminate().Wait(time.Minute).Err.Contents()
 	if strings.Contains(string(logs), "DATA RACE") {
-		return errors.New("Detected data race, see log output above to diagnose")
+		return errors.New("detected data race, see log output above to diagnose")
 	}
 	return nil
 }

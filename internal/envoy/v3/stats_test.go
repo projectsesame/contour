@@ -115,24 +115,30 @@ func TestStatsListeners(t *testing.T) {
 		},
 	}
 
+	envoyGen := NewEnvoyGen(EnvoyGenOpt{
+		XDSClusterName: DefaultXDSClusterName,
+	})
+
 	type testcase struct {
-		metrics contour_v1alpha1.MetricsConfig
-		health  contour_v1alpha1.HealthConfig
-		want    []*envoy_config_listener_v3.Listener
+		metrics        contour_v1alpha1.MetricsConfig
+		health         contour_v1alpha1.HealthConfig
+		omHealthConfig *contour_v1alpha1.HealthConfig
+		want           []*envoy_config_listener_v3.Listener
 	}
 
 	run := func(t *testing.T, name string, tc testcase) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			t.Helper()
-			got := StatsListeners(tc.metrics, tc.health)
+			got := envoyGen.StatsListeners(tc.metrics, tc.health, tc.omHealthConfig)
 			protobuf.ExpectEqual(t, tc.want, got)
 		})
 	}
 
 	run(t, "stats-and-health-over-http-single-listener", testcase{
-		metrics: contour_v1alpha1.MetricsConfig{Address: "127.0.0.127", Port: 8123},
-		health:  contour_v1alpha1.HealthConfig{Address: "127.0.0.127", Port: 8123},
+		metrics:        contour_v1alpha1.MetricsConfig{Address: "127.0.0.127", Port: 8123},
+		health:         contour_v1alpha1.HealthConfig{Address: "127.0.0.127", Port: 8123},
+		omHealthConfig: nil,
 		want: []*envoy_config_listener_v3.Listener{{
 			Name:    "stats-health",
 			Address: SocketAddress("127.0.0.127", 8123),
@@ -162,7 +168,8 @@ func TestStatsListeners(t *testing.T) {
 					},
 				},
 			),
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}},
 	})
 
@@ -179,6 +186,7 @@ func TestStatsListeners(t *testing.T) {
 			Address: "127.0.0.127",
 			Port:    8124,
 		},
+		omHealthConfig: nil,
 		want: []*envoy_config_listener_v3.Listener{{
 			Name:    "stats",
 			Address: SocketAddress("127.0.0.127", 8123),
@@ -216,13 +224,14 @@ func TestStatsListeners(t *testing.T) {
 							},
 							TlsCertificateSdsSecretConfigs: []*envoy_transport_socket_tls_v3.SdsSecretConfig{{
 								Name:      "metrics-tls-certificate",
-								SdsConfig: ConfigSource("contour"),
+								SdsConfig: envoyGen.GetConfigSource(),
 							}},
 						},
 					},
 				),
 			}},
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}, {
 			Name:    "health",
 			Address: SocketAddress("127.0.0.127", 8124),
@@ -252,7 +261,8 @@ func TestStatsListeners(t *testing.T) {
 					},
 				},
 			),
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}},
 	})
 
@@ -270,6 +280,7 @@ func TestStatsListeners(t *testing.T) {
 			Address: "127.0.0.127",
 			Port:    8124,
 		},
+		omHealthConfig: nil,
 		want: []*envoy_config_listener_v3.Listener{{
 			Name:    "stats",
 			Address: SocketAddress("127.0.0.127", 8123),
@@ -307,12 +318,12 @@ func TestStatsListeners(t *testing.T) {
 							},
 							TlsCertificateSdsSecretConfigs: []*envoy_transport_socket_tls_v3.SdsSecretConfig{{
 								Name:      "metrics-tls-certificate",
-								SdsConfig: ConfigSource("contour"),
+								SdsConfig: envoyGen.GetConfigSource(),
 							}},
 							ValidationContextType: &envoy_transport_socket_tls_v3.CommonTlsContext_ValidationContextSdsSecretConfig{
 								ValidationContextSdsSecretConfig: &envoy_transport_socket_tls_v3.SdsSecretConfig{
 									Name:      "metrics-ca-certificate",
-									SdsConfig: ConfigSource("contour"),
+									SdsConfig: envoyGen.GetConfigSource(),
 								},
 							},
 						},
@@ -320,7 +331,8 @@ func TestStatsListeners(t *testing.T) {
 					},
 				),
 			}},
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}, {
 			Name:    "health",
 			Address: SocketAddress("127.0.0.127", 8124),
@@ -350,7 +362,8 @@ func TestStatsListeners(t *testing.T) {
 					},
 				},
 			),
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}},
 	})
 
@@ -363,6 +376,7 @@ func TestStatsListeners(t *testing.T) {
 			Address: "127.0.0.128",
 			Port:    8124,
 		},
+		omHealthConfig: nil,
 		want: []*envoy_config_listener_v3.Listener{{
 			Name:    "stats",
 			Address: SocketAddress("127.0.0.127", 8123),
@@ -392,7 +406,8 @@ func TestStatsListeners(t *testing.T) {
 					},
 				},
 			),
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
 		}, {
 			Name:    "health",
 			Address: SocketAddress("127.0.0.128", 8124),
@@ -422,7 +437,77 @@ func TestStatsListeners(t *testing.T) {
 					},
 				},
 			),
-			SocketOptions: NewSocketOptions().TCPKeepalive().Build(),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
+		}},
+	})
+
+	run(t, "stats-and-health-over-http-single-listener-with-om-enforced-health-listener", testcase{
+		metrics:        contour_v1alpha1.MetricsConfig{Address: "127.0.0.127", Port: 8123},
+		health:         contour_v1alpha1.HealthConfig{Address: "127.0.0.127", Port: 8123},
+		omHealthConfig: &contour_v1alpha1.HealthConfig{Address: "127.0.0.127", Port: 8124},
+		want: []*envoy_config_listener_v3.Listener{{
+			Name:    "stats-health",
+			Address: SocketAddress("127.0.0.127", 8123),
+			FilterChains: FilterChains(
+				&envoy_config_listener_v3.Filter{
+					Name: wellknown.HTTPConnectionManager,
+					ConfigType: &envoy_config_listener_v3.Filter_TypedConfig{
+						TypedConfig: protobuf.MustMarshalAny(&envoy_filter_network_http_connection_manager_v3.HttpConnectionManager{
+							StatPrefix: "stats",
+							RouteSpecifier: &envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_RouteConfig{
+								RouteConfig: &envoy_config_route_v3.RouteConfiguration{
+									VirtualHosts: []*envoy_config_route_v3.VirtualHost{{
+										Name:    "backend",
+										Domains: []string{"*"},
+										Routes:  []*envoy_config_route_v3.Route{readyRoute, statsRoute, prometheusStatsRoute},
+									}},
+								},
+							},
+							HttpFilters: []*envoy_filter_network_http_connection_manager_v3.HttpFilter{{
+								Name: wellknown.Router,
+								ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
+									TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_router_v3.Router{}),
+								},
+							}},
+							NormalizePath: wrapperspb.Bool(true),
+						}),
+					},
+				},
+			),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: true,
+		}, {
+			Name:    "health-om-enforced",
+			Address: SocketAddress("127.0.0.127", 8124),
+			FilterChains: FilterChains(
+				&envoy_config_listener_v3.Filter{
+					Name: wellknown.HTTPConnectionManager,
+					ConfigType: &envoy_config_listener_v3.Filter_TypedConfig{
+						TypedConfig: protobuf.MustMarshalAny(&envoy_filter_network_http_connection_manager_v3.HttpConnectionManager{
+							StatPrefix: "stats",
+							RouteSpecifier: &envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_RouteConfig{
+								RouteConfig: &envoy_config_route_v3.RouteConfiguration{
+									VirtualHosts: []*envoy_config_route_v3.VirtualHost{{
+										Name:    "backend",
+										Domains: []string{"*"},
+										Routes:  []*envoy_config_route_v3.Route{readyRoute},
+									}},
+								},
+							},
+							HttpFilters: []*envoy_filter_network_http_connection_manager_v3.HttpFilter{{
+								Name: wellknown.Router,
+								ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
+									TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_router_v3.Router{}),
+								},
+							}},
+							NormalizePath: wrapperspb.Bool(true),
+						}),
+					},
+				},
+			),
+			SocketOptions:         NewSocketOptions().TCPKeepalive().Build(),
+			IgnoreGlobalConnLimit: false,
 		}},
 	})
 }

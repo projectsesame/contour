@@ -267,13 +267,6 @@ func authzOverrideDisabled(t *testing.T, rh ResourceEventHandlerWrapper, c *Cont
 	// same authorization enablement as the root proxy, and
 	// the other path should have the opposite enablement.
 
-	disabledConfig := withFilterConfig(envoy_v3.ExtAuthzFilterName,
-		&envoy_filter_http_ext_authz_v3.ExtAuthzPerRoute{
-			Override: &envoy_filter_http_ext_authz_v3.ExtAuthzPerRoute_Disabled{
-				Disabled: true,
-			},
-		})
-
 	c.Request(routeType).Equals(&envoy_service_discovery_v3.DiscoveryResponse{
 		TypeUrl: routeType,
 		Resources: resources(t,
@@ -287,7 +280,7 @@ func authzOverrideDisabled(t *testing.T, rh ResourceEventHandlerWrapper, c *Cont
 					&envoy_config_route_v3.Route{
 						Match:                routePrefix("/default"),
 						Action:               routeCluster("default/app-server/80/da39a3ee5e"),
-						TypedPerFilterConfig: disabledConfig,
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 				),
 			),
@@ -297,7 +290,7 @@ func authzOverrideDisabled(t *testing.T, rh ResourceEventHandlerWrapper, c *Cont
 					&envoy_config_route_v3.Route{
 						Match:                routePrefix("/disabled"),
 						Action:               routeCluster("default/app-server/80/da39a3ee5e"),
-						TypedPerFilterConfig: disabledConfig,
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 					&envoy_config_route_v3.Route{
 						Match:  routePrefix("/default"),
@@ -309,22 +302,26 @@ func authzOverrideDisabled(t *testing.T, rh ResourceEventHandlerWrapper, c *Cont
 				"ingress_http",
 				envoy_v3.VirtualHost(disabled,
 					&envoy_config_route_v3.Route{
-						Match:  routePrefix("/enabled"),
-						Action: withRedirect(),
+						Match:                routePrefix("/enabled"),
+						Action:               withRedirect(),
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 					&envoy_config_route_v3.Route{
-						Match:  routePrefix("/default"),
-						Action: withRedirect(),
+						Match:                routePrefix("/default"),
+						Action:               withRedirect(),
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 				),
 				envoy_v3.VirtualHost(enabled,
 					&envoy_config_route_v3.Route{
-						Match:  routePrefix("/disabled"),
-						Action: withRedirect(),
+						Match:                routePrefix("/disabled"),
+						Action:               withRedirect(),
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 					&envoy_config_route_v3.Route{
-						Match:  routePrefix("/default"),
-						Action: withRedirect(),
+						Match:                routePrefix("/default"),
+						Action:               withRedirect(),
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 				),
 			),
@@ -406,8 +403,9 @@ func authzMergeRouteContext(t *testing.T, rh ResourceEventHandlerWrapper, c *Con
 				"ingress_http",
 				envoy_v3.VirtualHost(fqdn,
 					&envoy_config_route_v3.Route{
-						Match:  routePrefix("/"),
-						Action: withRedirect(),
+						Match:                routePrefix("/"),
+						Action:               withRedirect(),
+						TypedPerFilterConfig: envoy_v3.DisabledExtAuthConfig(),
 					},
 				),
 			),
@@ -433,8 +431,8 @@ func authzInvalidReference(t *testing.T, rh ResourceEventHandlerWrapper, c *Cont
 
 	invalid.Spec.VirtualHost.Authorization.ExtensionServiceRef = contour_v1.ExtensionServiceReference{
 		APIVersion: "foo/bar",
-		Namespace:  "",
-		Name:       "",
+		Namespace:  "missing",
+		Name:       "extension",
 	}
 
 	rh.OnDelete(invalid)
@@ -587,10 +585,10 @@ func TestAuthorization(t *testing.T) {
 			rh.OnAdd(fixture.NewService("auth/oidc-server").
 				WithPorts(core_v1.ServicePort{Port: 8081}))
 
-			rh.OnAdd(featuretests.Endpoints("auth", "oidc-server", core_v1.EndpointSubset{
-				Addresses: featuretests.Addresses("192.168.183.21"),
-				Ports:     featuretests.Ports(featuretests.Port("", 8081)),
-			}))
+			rh.OnAdd(featuretests.EndpointSlice("auth", "oidc-es", "oidc-server",
+				featuretests.Endpoints(featuretests.Endpoint("192.168.183.21", true)),
+				featuretests.Ports(featuretests.Port("", 8081)),
+			))
 
 			rh.OnAdd(&contour_v1alpha1.ExtensionService{
 				ObjectMeta: fixture.ObjectMeta("auth/extension"),
@@ -607,10 +605,10 @@ func TestAuthorization(t *testing.T) {
 			rh.OnAdd(fixture.NewService("app-server").
 				WithPorts(core_v1.ServicePort{Port: 80}))
 
-			rh.OnAdd(featuretests.Endpoints("auth", "app-server", core_v1.EndpointSubset{
-				Addresses: featuretests.Addresses("192.168.183.21"),
-				Ports:     featuretests.Ports(featuretests.Port("", 80)),
-			}))
+			rh.OnAdd(featuretests.EndpointSlice("auth", "app-es", "app-server",
+				featuretests.Endpoints(featuretests.Endpoint("192.168.183.21", true)),
+				featuretests.Ports(featuretests.Port("", 80)),
+			))
 
 			rh.OnAdd(featuretests.TLSSecret(t, "certificate", &featuretests.ServerCertificate))
 			f(t, rh, c)

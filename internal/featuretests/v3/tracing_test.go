@@ -61,13 +61,17 @@ func TestTracing(t *testing.T) {
 	rh, c, done := setup(t, withTrace)
 	defer done()
 
+	envoygen := envoy_v3.NewEnvoyGen(envoy_v3.EnvoyGenOpt{
+		XDSClusterName: envoy_v3.DefaultXDSClusterName,
+	})
+
 	rh.OnAdd(fixture.NewService("projectcontour/otel-collector").
 		WithPorts(core_v1.ServicePort{Port: 4317}))
 
-	rh.OnAdd(featuretests.Endpoints("projectcontour", "otel-collector", core_v1.EndpointSubset{
-		Addresses: featuretests.Addresses("10.244.41.241"),
-		Ports:     featuretests.Ports(featuretests.Port("", 4317)),
-	}))
+	rh.OnAdd(featuretests.EndpointSlice("projectcontour", "otel-es", "otel-collector",
+		featuretests.Endpoints(featuretests.Endpoint("10.244.41.241", true)),
+		featuretests.Ports(featuretests.Port("", 4317)),
+	))
 
 	rh.OnAdd(&contour_v1alpha1.ExtensionService{
 		ObjectMeta: fixture.ObjectMeta("projectcontour/otel-collector"),
@@ -85,10 +89,10 @@ func TestTracing(t *testing.T) {
 	rh.OnAdd(fixture.NewService("projectcontour/app-server").
 		WithPorts(core_v1.ServicePort{Port: 80}))
 
-	rh.OnAdd(featuretests.Endpoints("projectcontour", "app-server", core_v1.EndpointSubset{
-		Addresses: featuretests.Addresses("10.244.184.102"),
-		Ports:     featuretests.Ports(featuretests.Port("", 80)),
-	}))
+	rh.OnAdd(featuretests.EndpointSlice("projectcontour", "app-es", "app-server",
+		featuretests.Endpoints(featuretests.Endpoint("10.244.184.102", true)),
+		featuretests.Ports(featuretests.Port("", 80)),
+	))
 
 	p := &contour_v1.HTTPProxy{
 		ObjectMeta: meta_v1.ObjectMeta{
@@ -114,7 +118,7 @@ func TestTracing(t *testing.T) {
 	rh.OnAdd(p)
 
 	httpListener := defaultHTTPListener()
-	httpListener.FilterChains = envoy_v3.FilterChains(envoy_v3.HTTPConnectionManagerBuilder().
+	httpListener.FilterChains = envoy_v3.FilterChains(envoygen.HTTPConnectionManagerBuilder().
 		RouteConfigName(xdscache_v3.ENVOY_HTTP_LISTENER).
 		MetricsPrefix(xdscache_v3.ENVOY_HTTP_LISTENER).
 		AccessLoggers(envoy_v3.FileAccessLogEnvoy(xdscache_v3.DEFAULT_HTTP_ACCESS_LOG, "", nil, contour_v1alpha1.LogLevelInfo)).

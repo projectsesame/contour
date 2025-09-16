@@ -21,11 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-const featureFlagUseEndpointSlices string = "useEndpointSlices"
-
-var featureFlagsMap = map[string]struct{}{
-	featureFlagUseEndpointSlices: {},
-}
+var featureFlagsMap = map[string]struct{}{}
 
 // Validate configuration that is not already covered by CRD validation.
 func (c *ContourConfigurationSpec) Validate() error {
@@ -37,9 +33,6 @@ func (c *ContourConfigurationSpec) Validate() error {
 	// Validation of nested configuration structs.
 	var validateFuncs []func() error
 
-	if c.XDSServer != nil {
-		validateFuncs = append(validateFuncs, c.XDSServer.Type.Validate)
-	}
 	if c.Envoy != nil {
 		validateFuncs = append(validateFuncs, c.Envoy.Validate)
 	}
@@ -100,15 +93,6 @@ func (t *TracingConfig) Validate() error {
 	return nil
 }
 
-func (x XDSServerType) Validate() error {
-	switch x {
-	case ContourServerType, EnvoyServerType:
-		return nil
-	default:
-		return fmt.Errorf("invalid xDS server type %q", x)
-	}
-}
-
 func (d ClusterDNSFamilyType) Validate() error {
 	switch d {
 	case AutoClusterDNSFamily, IPv4ClusterDNSFamily, IPv6ClusterDNSFamily, AllClusterDNSFamily:
@@ -121,6 +105,10 @@ func (d ClusterDNSFamilyType) Validate() error {
 // Validate configuration that cannot be handled with CRD validation.
 func (e *EnvoyConfig) Validate() error {
 	if err := endpointsInConfict(e.Health, e.Metrics); err != nil {
+		return fmt.Errorf("invalid envoy configuration: %v", err)
+	}
+
+	if err := healthEndpointsInConflict(e.Metrics, e.Health, e.OMEnforcedHealth); err != nil {
 		return fmt.Errorf("invalid envoy configuration: %v", err)
 	}
 
@@ -157,7 +145,7 @@ func (e *EnvoyConfig) Validate() error {
 	return nil
 }
 
-func ValidateTLSProtocolVersions(min, max string) error {
+func ValidateTLSProtocolVersions(minVersion, maxVersion string) error {
 	parseVersion := func(version, tip, defVal string) (string, error) {
 		switch version {
 		case "":
@@ -169,12 +157,12 @@ func ValidateTLSProtocolVersions(min, max string) error {
 		}
 	}
 
-	minVer, err := parseVersion(min, "minimum", "1.2")
+	minVer, err := parseVersion(minVersion, "minimum", "1.2")
 	if err != nil {
 		return err
 	}
 
-	maxVer, err := parseVersion(max, "maximum", "1.3")
+	maxVer, err := parseVersion(maxVersion, "maximum", "1.3")
 	if err != nil {
 		return err
 	}
@@ -247,24 +235,10 @@ func (f FeatureFlags) Validate() error {
 	for _, featureFlag := range f {
 		fields := strings.Split(featureFlag, "=")
 		if _, found := featureFlagsMap[fields[0]]; !found {
-			return fmt.Errorf("invalid contour configuration, unknown feature flag:%s", featureFlag)
+			return fmt.Errorf("invalid contour configuration, unknown feature flag: %s", featureFlag)
 		}
 	}
 	return nil
-}
-
-func (f FeatureFlags) IsEndpointSliceEnabled() bool {
-	// only when the flag: 'useEndpointSlices=false' is exists, return false
-	for _, flag := range f {
-		if !strings.HasPrefix(flag, featureFlagUseEndpointSlices) {
-			continue
-		}
-		fields := strings.Split(flag, "=")
-		if len(fields) == 2 && strings.ToLower(fields[1]) == "false" {
-			return false
-		}
-	}
-	return true
 }
 
 // Validate ensures that GatewayRef namespace/name is specified.
@@ -341,4 +315,18 @@ func endpointsInConfict(health *HealthConfig, metrics *MetricsConfig) error {
 		return fmt.Errorf("cannot use single port for health over HTTP and metrics over HTTPS")
 	}
 	return nil
+}
+
+// healthEndpointsInConflict returns an error if the same address and port are used between the overload manager enforced health listener and metrics
+// _or_ the stats listener. Since the metrics would be validated against the stats listener already we only need to check that the overload manager
+// health listener is not in conflict with either metrics or stats
+func healthEndpointsInConflict(metrics *MetricsConfig, health, omEnforcedHealth *HealthConfig) error {
+	switch {
+	case omEnforcedHealth != nil && health != nil && omEnforcedHealth.Address == health.Address && omEnforcedHealth.Port == health.Port:
+		return fmt.Errorf("cannot use the same port for health checks and overload-manager enforced health checks")
+	case omEnforcedHealth != nil && metrics != nil && omEnforcedHealth.Address == metrics.Address && omEnforcedHealth.Port == metrics.Port:
+		return fmt.Errorf("cannot use the same port for metrics and overload-manager enforced health checks")
+	default:
+		return nil
+	}
 }

@@ -4942,7 +4942,7 @@ func TestDAGStatus(t *testing.T) {
 				Name:      fallbackCertificate.Name,
 				Namespace: fallbackCertificate.Namespace,
 			}: fixture.NewValidCondition().
-				WithError(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted", `Spec.VirtualHost.TLS CA Secret "delegated/delegated" is invalid: Certificate delegation not permitted`),
+				WithError(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted", `Spec.VirtualHost.TLS CA Secret "delegated/delegated" is invalid: certificate delegation not permitted`),
 		},
 	})
 
@@ -5024,7 +5024,7 @@ func TestDAGStatus(t *testing.T) {
 				Name:      fallbackCertificate.Name,
 				Namespace: fallbackCertificate.Namespace,
 			}: fixture.NewValidCondition().
-				WithError(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted", `Spec.VirtualHost.TLS CRL Secret "delegated/delegated" is invalid: Certificate delegation not permitted`),
+				WithError(contour_v1.ConditionTypeTLSError, "DelegationNotPermitted", `Spec.VirtualHost.TLS CRL Secret "delegated/delegated" is invalid: certificate delegation not permitted`),
 		},
 	})
 
@@ -5168,7 +5168,7 @@ func TestDAGStatus(t *testing.T) {
 	})
 }
 
-func validGatewayStatusUpdate(listenerName string, listenerProtocol gatewayapi_v1.ProtocolType, attachedRoutes int) []*status.GatewayStatusUpdate {
+func validGatewayStatusUpdate(listenerName string, listenerProtocol gatewayapi_v1.ProtocolType, attachedRoutes int32) []*status.GatewayStatusUpdate {
 	var supportedKinds []gatewayapi_v1.RouteGroupKind
 
 	switch listenerProtocol {
@@ -5218,7 +5218,7 @@ func validGatewayStatusUpdate(listenerName string, listenerProtocol gatewayapi_v
 			ListenerStatus: map[string]*gatewayapi_v1.ListenerStatus{
 				listenerName: {
 					Name:           gatewayapi_v1.SectionName(listenerName),
-					AttachedRoutes: int32(attachedRoutes),
+					AttachedRoutes: attachedRoutes,
 					SupportedKinds: supportedKinds,
 					Conditions:     listenerValidConditions(),
 				},
@@ -8562,7 +8562,7 @@ func TestGatewayAPIHTTPRouteDAGStatus(t *testing.T) {
 				Namespace: "projectcontour",
 			},
 			Spec: gatewayapi_v1.GatewaySpec{
-				Addresses: []gatewayapi_v1.GatewayAddress{{
+				Addresses: []gatewayapi_v1.GatewaySpecAddress{{
 					Value: "1.2.3.4",
 				}},
 				Listeners: []gatewayapi_v1.Listener{{
@@ -9415,7 +9415,7 @@ func TestGatewayAPIHTTPRouteDAGStatus(t *testing.T) {
 							Type:    string(gatewayapi_v1.ListenerConditionProgrammed),
 							Status:  meta_v1.ConditionFalse,
 							Reason:  "Invalid",
-							Message: "Error parsing Listener.AllowedRoutes.Namespaces.Selector: values: Invalid value: []string{\"error\"}: values set must be empty for exists and does not exist.",
+							Message: "Error parsing Listener.AllowedRoutes.Namespaces.Selector: values: Invalid value: [\"error\"]: values set must be empty for exists and does not exist.",
 						},
 						listenerAcceptedCondition(),
 						listenerResolvedRefsCondition(),
@@ -10761,7 +10761,7 @@ func TestGatewayAPIGRPCRouteDAGStatus(t *testing.T) {
 							},
 							Headers: []gatewayapi_v1.GRPCHeaderMatch{
 								{
-									Type:  ptr.To(gatewayapi_v1.HeaderMatchType("UNKNOWN")), // <---- unknown type to break the test
+									Type:  ptr.To(gatewayapi_v1.GRPCHeaderMatchType("UNKNOWN")), // <---- unknown type to break the test
 									Name:  gatewayapi_v1.GRPCHeaderName("foo"),
 									Value: "bar",
 								},
@@ -10816,7 +10816,7 @@ func TestGatewayAPIGRPCRouteDAGStatus(t *testing.T) {
 							},
 							Headers: []gatewayapi_v1.GRPCHeaderMatch{
 								{
-									Type:  ptr.To(gatewayapi_v1.HeaderMatchRegularExpression),
+									Type:  ptr.To(gatewayapi_v1.GRPCHeaderMatchRegularExpression),
 									Name:  gatewayapi_v1.GRPCHeaderName("foo"),
 									Value: "invalid(-)regex)",
 								},

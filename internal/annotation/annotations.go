@@ -145,7 +145,7 @@ func ParseUpstreamProtocols(m map[string]string) map[string]string {
 // HTTPAllowed returns true unless the kubernetes.io/ingress.allow-http annotation is
 // present and set to false.
 func HTTPAllowed(i *networking_v1.Ingress) bool {
-	return !(i.Annotations["kubernetes.io/ingress.allow-http"] == "false")
+	return i.Annotations["kubernetes.io/ingress.allow-http"] != "false"
 }
 
 // TLSRequired returns true if the ingress.kubernetes.io/force-ssl-redirect annotation is
@@ -185,6 +185,11 @@ func NumRetries(i *networking_v1.Ingress) uint32 {
 	case -1:
 		return 0
 	case 1, 0:
+		return 1
+	}
+
+	// If set to other negative value than 1, then fall back to Envoy default.
+	if val < 0 {
 		return 1
 	}
 

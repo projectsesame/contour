@@ -41,13 +41,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
-	core_v1 "k8s.io/api/core/v1"
+	discovery_v1 "k8s.io/api/discovery/v1"
 	"k8s.io/client-go/tools/cache"
 
 	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	contour_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
 	"github.com/projectcontour/contour/internal/contour"
 	"github.com/projectcontour/contour/internal/dag"
+	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
 	"github.com/projectcontour/contour/internal/fixture"
 	"github.com/projectcontour/contour/internal/k8s"
 	"github.com/projectcontour/contour/internal/metrics"
@@ -61,7 +62,7 @@ import (
 )
 
 const (
-	endpointType = resource.EndpointType // nolint:varcheck,deadcode
+	endpointType = resource.EndpointType
 	clusterType  = resource.ClusterType
 	routeType    = resource.RouteType
 	listenerType = resource.ListenerType
@@ -82,7 +83,7 @@ func setup(t *testing.T, opts ...any) (ResourceEventHandlerWrapper, *Contour, fu
 	log := fixture.NewTestLogger(t)
 	log.SetLevel(logrus.DebugLevel)
 
-	et := xdscache_v3.NewEndpointsTranslator(log)
+	et := xdscache_v3.NewEndpointSliceTranslator(log)
 
 	conf := xdscache_v3.ListenerConfig{}
 	for _, opt := range opts {
@@ -91,16 +92,22 @@ func setup(t *testing.T, opts ...any) (ResourceEventHandlerWrapper, *Contour, fu
 		}
 	}
 
+	envoyGen := envoy_v3.NewEnvoyGen(envoy_v3.EnvoyGenOpt{
+		XDSClusterName: envoy_v3.DefaultXDSClusterName,
+	})
+
 	resources := []xdscache.ResourceCache{
 		xdscache_v3.NewListenerCache(
 			conf,
 			contour_v1alpha1.MetricsConfig{Address: "0.0.0.0", Port: 8002},
 			contour_v1alpha1.HealthConfig{Address: "0.0.0.0", Port: 8002},
+			nil,
 			0,
+			envoyGen,
 		),
 		&xdscache_v3.SecretCache{},
 		&xdscache_v3.RouteCache{},
-		&xdscache_v3.ClusterCache{},
+		xdscache_v3.NewClusterCache(envoyGen),
 		et,
 	}
 
@@ -192,10 +199,10 @@ func setup(t *testing.T, opts ...any) (ResourceEventHandlerWrapper, *Contour, fu
 	require.NoError(t, err)
 
 	rh := &resourceEventHandler{
-		EventHandler:       eh,
-		EndpointsHandler:   et,
-		Sequence:           eh.Sequence(),
-		statusUpdateCacher: statusUpdateCacher,
+		EventHandler:         eh,
+		EndpointSliceHandler: et,
+		Sequence:             eh.Sequence(),
+		statusUpdateCacher:   statusUpdateCacher,
 	}
 
 	return rh, &Contour{
@@ -214,13 +221,13 @@ func setup(t *testing.T, opts ...any) (ResourceEventHandlerWrapper, *Contour, fu
 		}
 }
 
-// resourceEventHandler composes a contour.EventHandler and a contour.EndpointsTranslator
+// resourceEventHandler composes a contour.EventHandler and a contour.EndpointSliceTranslator
 // into a single ResourceEventHandler type. Its event handlers are *blocking* for non-Endpoints
 // resources: they wait until the DAG has been rebuilt and observed, and the sequence counter
 // has been incremented, before returning.
 type resourceEventHandler struct {
-	EventHandler     cache.ResourceEventHandler
-	EndpointsHandler cache.ResourceEventHandler
+	EventHandler         cache.ResourceEventHandler
+	EndpointSliceHandler cache.ResourceEventHandler
 
 	Sequence <-chan int
 
@@ -233,8 +240,8 @@ func (r *resourceEventHandler) OnAdd(obj any) {
 	}
 
 	switch obj.(type) {
-	case *core_v1.Endpoints:
-		r.EndpointsHandler.OnAdd(obj, false)
+	case *discovery_v1.EndpointSlice:
+		r.EndpointSliceHandler.OnAdd(obj, false)
 	default:
 		r.EventHandler.OnAdd(obj, false)
 
@@ -255,8 +262,8 @@ func (r *resourceEventHandler) OnUpdate(oldObj, newObj any) {
 	}
 
 	switch newObj.(type) {
-	case *core_v1.Endpoints:
-		r.EndpointsHandler.OnUpdate(oldObj, newObj)
+	case *discovery_v1.EndpointSlice:
+		r.EndpointSliceHandler.OnUpdate(oldObj, newObj)
 	default:
 		r.EventHandler.OnUpdate(oldObj, newObj)
 
@@ -274,8 +281,8 @@ func (r *resourceEventHandler) OnDelete(obj any) {
 	}
 
 	switch obj.(type) {
-	case *core_v1.Endpoints:
-		r.EndpointsHandler.OnDelete(obj)
+	case *discovery_v1.EndpointSlice:
+		r.EndpointSliceHandler.OnDelete(obj)
 	default:
 		r.EventHandler.OnDelete(obj)
 
@@ -313,49 +320,6 @@ type StatusResult struct {
 	Have *contour_v1.HTTPProxyStatus
 }
 
-// Equals asserts that the status result is not an error and matches
-// the wanted status exactly.
-func (s *StatusResult) Equals(want contour_v1.HTTPProxyStatus) *Contour {
-	s.T.Helper()
-
-	// We should never get an error fetching the status for an
-	// object, so make it fatal if we do.
-	if s.Err != nil {
-		s.T.Fatalf(s.Err.Error())
-	}
-
-	assert.Equal(s.T, want, *s.Have)
-	return s.Contour
-}
-
-// Like asserts that the status result is not an error and matches
-// non-empty fields in the wanted status.
-func (s *StatusResult) Like(want contour_v1.HTTPProxyStatus) *Contour {
-	s.T.Helper()
-
-	// We should never get an error fetching the status for an
-	// object, so make it fatal if we do.
-	if s.Err != nil {
-		s.T.Fatalf(s.Err.Error())
-	}
-
-	if len(want.CurrentStatus) > 0 {
-		assert.Equal(s.T,
-			contour_v1.HTTPProxyStatus{CurrentStatus: want.CurrentStatus},
-			contour_v1.HTTPProxyStatus{CurrentStatus: s.Have.CurrentStatus},
-		)
-	}
-
-	if len(want.Description) > 0 {
-		assert.Equal(s.T,
-			contour_v1.HTTPProxyStatus{Description: want.Description},
-			contour_v1.HTTPProxyStatus{Description: s.Have.Description},
-		)
-	}
-
-	return s.Contour
-}
-
 // HasError asserts that there is an error on the Valid Condition in the proxy
 // that matches the given values.
 func (s *StatusResult) HasError(condType, reason, message string) *Contour {
@@ -366,7 +330,7 @@ func (s *StatusResult) HasError(condType, reason, message string) *Contour {
 
 	subCond, ok := validCond.GetError(condType)
 	if !ok {
-		s.T.Fatalf("Did not find error %s", condType)
+		s.Fatalf("Did not find error %s", condType)
 	}
 	assert.Equal(s.T, reason, subCond.Reason)
 	assert.Equal(s.T, message, subCond.Message)
@@ -376,7 +340,7 @@ func (s *StatusResult) HasError(condType, reason, message string) *Contour {
 
 // IsValid asserts that the proxy's CurrentStatus field is equal to "valid".
 func (s *StatusResult) IsValid() *Contour {
-	s.T.Helper()
+	s.Helper()
 
 	assert.Equal(s.T, status.ProxyStatusValid, status.ProxyStatus(s.Have.CurrentStatus))
 
@@ -385,7 +349,7 @@ func (s *StatusResult) IsValid() *Contour {
 
 // IsInvalid asserts that the proxy's CurrentStatus field is equal to "invalid".
 func (s *StatusResult) IsInvalid() *Contour {
-	s.T.Helper()
+	s.Helper()
 
 	assert.Equal(s.T, status.ProxyStatusInvalid, status.ProxyStatus(s.Have.CurrentStatus))
 
@@ -414,7 +378,7 @@ func (c *Contour) Status(obj any) *StatusResult {
 // NoStatus asserts that the given object did not get any status set.
 func (c *Contour) NoStatus(obj any) *Contour {
 	if _, err := c.statusUpdateCache.GetStatus(obj); err == nil {
-		c.T.Errorf("found cached object status, wanted no status")
+		c.Errorf("found cached object status, wanted no status")
 	}
 
 	return c
@@ -485,7 +449,7 @@ func (r *Response) Equals(want *envoy_service_discovery_v3.DiscoveryResponse) *C
 	sort.Slice(want.Resources, func(i, j int) bool { return string(want.Resources[i].Value) < string(want.Resources[j].Value) })
 	sort.Slice(r.Resources, func(i, j int) bool { return string(r.Resources[i].Value) < string(r.Resources[j].Value) })
 
-	protobuf.RequireEqual(r.T, want.Resources, r.DiscoveryResponse.Resources)
+	protobuf.RequireEqual(r.T, want.Resources, r.Resources)
 
 	return r.Contour
 }
