@@ -43,13 +43,13 @@ func Default(namespace, name string) *Contour {
 			Name:      name,
 		},
 		Spec: ContourSpec{
-			ContourReplicas:       2,
-			EnvoyDNSLookupFamily:  "auto",
-			EnvoyWorkloadType:     WorkloadTypeDaemonSet,
-			EnvoyReplicas:         2, // ignored if not provisioning Envoy as a deployment.
-			EnvoyLogLevel:         contour_v1alpha1.InfoLog,
-			EnvoyBaseID:           0,
-			EnvoyMaxHeapSizeBytes: 0,
+			ContourReplicas:               2,
+			EnvoyDNSLookupFamily:          "auto",
+			EnvoyWorkloadType:             WorkloadTypeDaemonSet,
+			EnvoyReplicas:                 2, // ignored if not provisioning Envoy as a deployment.
+			EnvoyLogLevel:                 contour_v1alpha1.InfoLog,
+			EnvoyBaseID:                   0,
+			EnvoyMaxHeapSizeBytes:         0,
 			EnvoyMaxDownstreamConnections: 0,
 			NetworkPublishing: NetworkPublishing{
 				Envoy: EnvoyNetworkPublishing{

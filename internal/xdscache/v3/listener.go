@@ -634,11 +634,11 @@ func toExtProc(p *GlobalExtProcConfig) *dag.ExtProc {
 
 	return &dag.ExtProc{
 		ExtProcService: &dag.ExtensionCluster{
-			Name: dag.ExtensionClusterName(p.ExtensionServiceConfig.ExtensionService),
-			SNI:  p.ExtensionServiceConfig.SNI,
+			Name: dag.ExtensionClusterName(p.ExtensionService),
+			SNI:  p.SNI,
 		},
 		FailOpen:          p.FailOpen,
-		ResponseTimeout:   p.ExtensionServiceConfig.Timeout,
+		ResponseTimeout:   p.Timeout,
 		ProcessingMode:    p.ProcessingMode,
 		MutationRules:     p.MutationRules,
 		AllowModeOverride: p.AllowModeOverride,

@@ -876,7 +876,7 @@ func TestCluster(t *testing.T) {
 				AltStatName:          "default_kuard_443",
 				ClusterDiscoveryType: ClusterDiscoveryType(envoy_config_cluster_v3.Cluster_EDS),
 				EdsClusterConfig: &envoy_config_cluster_v3.Cluster_EdsClusterConfig{
-					EdsConfig:   ConfigSource("contour"),
+					EdsConfig:   edsConfig,
 					ServiceName: "default/kuard/http",
 				},
 				OutlierDetection: &envoy_config_cluster_v3.OutlierDetection{
@@ -900,7 +900,7 @@ func TestCluster(t *testing.T) {
 				AltStatName:          "default_kuard_443",
 				ClusterDiscoveryType: ClusterDiscoveryType(envoy_config_cluster_v3.Cluster_EDS),
 				EdsClusterConfig: &envoy_config_cluster_v3.Cluster_EdsClusterConfig{
-					EdsConfig:   ConfigSource("contour"),
+					EdsConfig:   edsConfig,
 					ServiceName: "default/kuard/http",
 				},
 				OutlierDetection: &envoy_config_cluster_v3.OutlierDetection{
@@ -928,7 +928,7 @@ func TestCluster(t *testing.T) {
 				AltStatName:          "default_kuard_443",
 				ClusterDiscoveryType: ClusterDiscoveryType(envoy_config_cluster_v3.Cluster_EDS),
 				EdsClusterConfig: &envoy_config_cluster_v3.Cluster_EdsClusterConfig{
-					EdsConfig:   ConfigSource("contour"),
+					EdsConfig:   edsConfig,
 					ServiceName: "default/kuard/http",
 				},
 				OutlierDetection: &envoy_config_cluster_v3.OutlierDetection{
@@ -955,7 +955,7 @@ func TestCluster(t *testing.T) {
 				AltStatName:          "default_kuard_443",
 				ClusterDiscoveryType: ClusterDiscoveryType(envoy_config_cluster_v3.Cluster_EDS),
 				EdsClusterConfig: &envoy_config_cluster_v3.Cluster_EdsClusterConfig{
-					EdsConfig:   ConfigSource("contour"),
+					EdsConfig:   edsConfig,
 					ServiceName: "default/kuard/http",
 				},
 				OutlierDetection: &envoy_config_cluster_v3.OutlierDetection{

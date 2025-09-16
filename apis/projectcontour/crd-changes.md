@@ -4,62 +4,62 @@
 
 ## 35: Tag/Release: v1.25.2-baseid-podlabels/2023-08-16
 
-| Commit Date          | SHA        | Author               | Message                                  | File Path(s)                             |
-|-|-|-|-|-|
-| 2022-05-02 12:54:38  | 92c4fc5e2b | Sunjay Bhatia        | Add query parameter hash policy (#4508)  | ./v1/httpproxy.go |
-| 2022-05-09 09:13:42  | 46fa79db56 | Steve Kriss          | move ContourConfiguration enum validatio | ./v1alpha1/contourconfig.go |
-| 2022-05-20 14:11:54  | 4c3b50f1ce | Steve Kriss          | apis: remove ContourConfiguration DebugL | ./v1alpha1/contourconfig.go |
-| 2022-05-24 11:20:19  | 39d735c08a | yangyang             | HTTPProxy: add DirectResponsePolicy opti | ./v1/httpproxy.go |
-| 2022-06-28 08:29:42  | cbec8eca9e | Tero Saarni          | Adds support for client certificate revo | ./v1/httpproxy.go |
-| 2022-07-20 10:15:10  | 93c0cee19a | Sunjay Bhatia        | Consolidate access log and tls cipher su | ./v1alpha1/contourconfig.go |
-| 2022-09-06 20:03:34  | 0d5fb6c4af | izturn               | gateway provisioner: support changing Ku | ./v1alpha1/contourdeployment.go |
-| 2022-09-07 08:13:16  | e1a729656a | izturn               | gateway provisioner: support changing Co | ./v1alpha1/contourconfig.go, ./v1alpha1/contourdeployment.go |
-| 2022-09-14 18:14:54  | 61e732888d | Sunjay Bhatia        | CORSPolicy AllowOrigin can be configured | ./v1/httpproxy.go |
-| 2022-09-21 11:15:10  | 3adbe6d549 | Steve Kriss          | JWT verification (#4723)                 | ./v1/httpproxy.go |
-| 2022-09-22 08:05:38  | 31787ad2d7 | Steve Kriss          | support TLS validation for JWKS servers  | ./v1/httpproxy.go |
-| 2022-10-03 08:09:26  | d53f4c082a | izturn               | crd/ContourDeployment: Add ResourceLabel | ./v1alpha1/contourdeployment.go |
-| 2022-10-06 10:33:41  | 423b8e6a5f | Tero Saarni          | Added support for Envoy slow start mode. | ./v1/httpproxy.go |
-| 2022-10-07 08:16:05  | 70459553ef | Steve Kriss          | add optional DNS lookup family for remot | ./v1/httpproxy.go |
-| 2022-10-13 09:41:30  | 271edabd73 | Steve Kriss          | add ForwardJWT option to JWTProvider (#4 | ./v1/httpproxy.go |
-| 2022-10-13 14:07:14  | 0467b8408e | izturn               | crd/ContourDeployment: Add fields 'extra | ./v1alpha1/contourconfig.go, ./v1alpha1/contourdeployment.go |
-| 2022-10-17 11:45:56  | b184f57a66 | izturn               | crd/ContourDeployment: Add field 'podAnn | ./v1alpha1/contourdeployment.go |
-| 2022-10-17 20:52:55  | f746c7a130 | izturn               | crd/ContourDeployment: Add fields for re | ./v1alpha1/contourdeployment.go |
-| 2022-10-21 06:35:44  | ece8a2491a | Gautier Delorme      | Add support for optional certificate val | ./v1/httpproxy.go |
-| 2022-10-21 09:22:10  | c5cbcd9b82 | Gautier Delorme      | XFCC header support (#4797)              | ./v1/httpproxy.go |
-| 2022-10-28 12:18:14  | 433fc40ae3 | yangyang             | HTTPProxy: add healthCheck port config ( | ./v1/httpproxy.go |
-| 2022-11-01 10:13:19  | e700127f3e | izturn               | gateway provisioner: support changing En | ./v1alpha1/contourdeployment.go |
-| 2022-11-01 11:31:02  | fac2c32ee2 | Steve Kriss          | provisioner: move LogLevel validation to | ./v1alpha1/contourdeployment.go |
-| 2022-11-02 11:23:18  | 4badccc726 | izturn               | crd/ContourDeployment: Add field for set | ./v1alpha1/contourdeployment.go |
-| 2022-11-28 11:36:21  | 632808ccbf | izturn               | crd/ContourDeployment: Add fields for (u | ./v1alpha1/contourdeployment.go |
-| 2022-12-21 15:48:51  | f42d3394fc | Vishal Choudhary     | Added support for `ALL` DNS lookup famil | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
-| 2023-01-12 13:34:43  | c06623a1c5 | Víctor Roldán Beta | expose configuration for envoy's RateLim | ./v1alpha1/contourconfig.go |
-| 2023-01-17 10:15:11  | 31fdfe661e | izturn               | internal/provisioner: set NodePorts from | ./v1alpha1/contourdeployment.go |
-| 2023-01-23 10:45:40  | cf769c1216 | Vishal Choudhary     | add support for Envoy's server header tr | ./v1alpha1/contourconfig.go |
-| 2023-02-07 10:19:39  | b58e470930 | tigerK               | HTTPProxy: Add AllowPrivateNetwork to CO | ./v1/httpproxy.go |
-| 2023-02-08 13:11:24  | 5d51513273 | Aurel Canciu         | HTTPProxy: Implement HTTP query param ma | ./v1/httpproxy.go |
-| 2023-03-20 12:08:35  | fac6a99041 | Clayton Gonsalves    | feat: Add HTTP support for External Auth | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
-| 2023-03-20 15:10:10  | 7d291e9d3c | Jean-Daniel Dupas    | Internal redirect implementation (#5010) | ./v1/httpproxy.go |
-| 2023-03-22 12:28:00  | 5cbd2f0b26 | fangfpeng            | HTTPProxy: support Host header rewrites  | ./v1/httpproxy.go |
-| 2023-04-13 09:04:41  | c813560318 | yangyang             | Add tracing support (#5043)              | ./v1alpha1/contourconfig.go |
-| 2023-04-25 07:04:33  | f3eb153cce | Evan Cordell         | httpproxy: Add support for ip-based filt | ./v1/httpproxy.go |
-| 2023-04-26 11:19:44  | 894693320f | Arjun Salyan         | HTTPProxy: add exact path match conditio | ./v1/httpproxy.go |
-| 2023-05-01 07:39:07  | 6d4c6a099f | cui fliter           | fix typos (#5316)                        | ./v1/httpproxy.go, ./v1/tlscertificatedelegation.go |
-| 2023-05-17 10:17:35  | b5469efa7d | Sotiris Nanopoulos   | Adds `critical` level for access logging | ./v1alpha1/contourconfig.go |
-| 2023-05-23 14:56:32  | df302274e6 | Jean-Daniel Dupas    | [provisioner] Add `ipFamilyPolicy` field | ./v1alpha1/contourdeployment.go |
-| 2023-05-26 09:36:47  | d2df163d42 | Clayton Gonsalves    | HTTPProxy: add regex support for path ma | ./v1/httpproxy.go |
-| 2023-05-26 16:20:55  | e8f4c683f1 | Steve Kriss          | HTTPProxy: improve godoc for match condi | ./v1/httpproxy.go |
-| 2023-06-02 15:25:39  | 8fff15bd34 | izturn               | ContourDeployment: add field podAnnotati | ./v1alpha1/contourdeployment.go |
-| 2023-06-14 10:52:16  | 5a77976028 | Clayton Gonsalves    | Add max_requests_per_connection for clus | ./v1alpha1/contourconfig.go |
-| 2023-06-23 11:49:36  | 615d553292 | Hassan Shamji        | Enable HTTPProxy Fractional Mirroring (# | ./v1/httpproxy.go |
-| 2023-06-23 12:19:54  | a1f8c9ea68 | Rajat Vig            | Allow changing per_connection_buffer_lim | ./v1alpha1/contourconfig.go |
-| 2023-06-28 08:53:00  | 585bdb0fc2 | Steve Kriss          | HTTPProxy: support health check status r | ./v1/httpproxy.go |
-| 2023-06-28 14:35:31  | d0f1171bd3 | Tero Saarni          | Clarify TLS certificate delegation (#552 | ./v1/httpproxy.go |
-| 2023-07-12 20:11:23  | d259b073da | Rajat Vig            | Allow changing per_connection_buffer_lim | ./v1alpha1/contourconfig.go |
-| 2023-07-14 15:58:51  | 95f3eab3d6 | Shadi Altarsha       | Add support for General RateLimit Policy | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
-| 2023-07-24 13:43:12  | f6c112e60a | Sotiris Nanopoulos   | HTTPProxy: support case insensitive head | ./v1/httpproxy.go |
-| 2023-07-28 10:02:14  | d60959ec98 | Sotiris Nanopoulos   | Adds support for treating missing header | ./v1/httpproxy.go |
-| 2023-08-09 18:39:46  | 135c8a9651 | izturn               | make Listener maximum TLS version config | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
-| 2023-08-15 14:39:07  | e508a4a34f | Tero Saarni          | Added config for socket options for list | ./v1alpha1/contourconfig.go |
+| Commit Date          | SHA        | Author             | Message                                   | File Path(s)                             |
+|-|-|--------------------|-------------------------------------------|-|
+| 2022-05-02 12:54:38  | 92c4fc5e2b | Sunjay Bhatia      | Add query parameter hash policy (#4508)   | ./v1/httpproxy.go |
+| 2022-05-09 09:13:42  | 46fa79db56 | Steve Kriss        | move ContourConfiguration enum validatio  | ./v1alpha1/contourconfig.go |
+| 2022-05-20 14:11:54  | 4c3b50f1ce | Steve Kriss        | apis: remove ContourConfiguration DebugL  | ./v1alpha1/contourconfig.go |
+| 2022-05-24 11:20:19  | 39d735c08a | yangyang           | HTTPProxy: add DirectResponsePolicy opti  | ./v1/httpproxy.go |
+| 2022-06-28 08:29:42  | cbec8eca9e | Tero Saarni        | Adds support for client certificate revo  | ./v1/httpproxy.go |
+| 2022-07-20 10:15:10  | 93c0cee19a | Sunjay Bhatia      | Consolidate access log and tls cipher su  | ./v1alpha1/contourconfig.go |
+| 2022-09-06 20:03:34  | 0d5fb6c4af | izturn             | gateway provisioner: support changing Ku  | ./v1alpha1/contourdeployment.go |
+| 2022-09-07 08:13:16  | e1a729656a | izturn             | gateway provisioner: support changing Co  | ./v1alpha1/contourconfig.go, ./v1alpha1/contourdeployment.go |
+| 2022-09-14 18:14:54  | 61e732888d | Sunjay Bhatia      | CORSPolicy AllowOrigin can be configured  | ./v1/httpproxy.go |
+| 2022-09-21 11:15:10  | 3adbe6d549 | Steve Kriss        | JWT verification (#4723)                  | ./v1/httpproxy.go |
+| 2022-09-22 08:05:38  | 31787ad2d7 | Steve Kriss        | support TLS validation for JWKS servers   | ./v1/httpproxy.go |
+| 2022-10-03 08:09:26  | d53f4c082a | izturn             | crd/ContourDeployment: Add ResourceLabel  | ./v1alpha1/contourdeployment.go |
+| 2022-10-06 10:33:41  | 423b8e6a5f | Tero Saarni        | Added support for Envoy slow start mode.  | ./v1/httpproxy.go |
+| 2022-10-07 08:16:05  | 70459553ef | Steve Kriss        | add optional DNS lookup family for remote | ./v1/httpproxy.go |
+| 2022-10-13 09:41:30  | 271edabd73 | Steve Kriss        | add ForwardJWT option to JWTProvider (#4  | ./v1/httpproxy.go |
+| 2022-10-13 14:07:14  | 0467b8408e | izturn             | crd/ContourDeployment: Add fields 'extra  | ./v1alpha1/contourconfig.go, ./v1alpha1/contourdeployment.go |
+| 2022-10-17 11:45:56  | b184f57a66 | izturn             | crd/ContourDeployment: Add field 'podAnn  | ./v1alpha1/contourdeployment.go |
+| 2022-10-17 20:52:55  | f746c7a130 | izturn             | crd/ContourDeployment: Add fields for re  | ./v1alpha1/contourdeployment.go |
+| 2022-10-21 06:35:44  | ece8a2491a | Gautier Delorme    | Add support for optional certificate val  | ./v1/httpproxy.go |
+| 2022-10-21 09:22:10  | c5cbcd9b82 | Gautier Delorme    | XFCC header support (#4797)               | ./v1/httpproxy.go |
+| 2022-10-28 12:18:14  | 433fc40ae3 | yangyang           | HTTPProxy: add healthCheck port config (  | ./v1/httpproxy.go |
+| 2022-11-01 10:13:19  | e700127f3e | izturn             | gateway provisioner: support changing En  | ./v1alpha1/contourdeployment.go |
+| 2022-11-01 11:31:02  | fac2c32ee2 | Steve Kriss        | provisioner: move LogLevel validation to  | ./v1alpha1/contourdeployment.go |
+| 2022-11-02 11:23:18  | 4badccc726 | izturn             | crd/ContourDeployment: Add field for set  | ./v1alpha1/contourdeployment.go |
+| 2022-11-28 11:36:21  | 632808ccbf | izturn             | crd/ContourDeployment: Add fields for (u  | ./v1alpha1/contourdeployment.go |
+| 2022-12-21 15:48:51  | f42d3394fc | Vishal Choudhary   | Added support for `ALL` DNS lookup famil  | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
+| 2023-01-12 13:34:43  | c06623a1c5 | Víctor Roldán Beta | expose configuration for envoy's RateLim  | ./v1alpha1/contourconfig.go |
+| 2023-01-17 10:15:11  | 31fdfe661e | izturn             | internal/provisioner: set NodePorts from  | ./v1alpha1/contourdeployment.go |
+| 2023-01-23 10:45:40  | cf769c1216 | Vishal Choudhary   | add support for Envoy's server header tr  | ./v1alpha1/contourconfig.go |
+| 2023-02-07 10:19:39  | b58e470930 | tigerK             | HTTPProxy: Add AllowPrivateNetwork to CO  | ./v1/httpproxy.go |
+| 2023-02-08 13:11:24  | 5d51513273 | Aurel Canciu       | HTTPProxy: Implement HTTP query param ma  | ./v1/httpproxy.go |
+| 2023-03-20 12:08:35  | fac6a99041 | Clayton Gonsalves  | feat: Add HTTP support for External Auth  | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
+| 2023-03-20 15:10:10  | 7d291e9d3c | Jean-Daniel Dupas  | Internal redirect implementation (#5010)  | ./v1/httpproxy.go |
+| 2023-03-22 12:28:00  | 5cbd2f0b26 | fangfpeng          | HTTPProxy: support Host header rewrites   | ./v1/httpproxy.go |
+| 2023-04-13 09:04:41  | c813560318 | yangyang           | Add tracing support (#5043)               | ./v1alpha1/contourconfig.go |
+| 2023-04-25 07:04:33  | f3eb153cce | Evan Cordell       | httpproxy: Add support for ip-based filt  | ./v1/httpproxy.go |
+| 2023-04-26 11:19:44  | 894693320f | Arjun Salyan       | HTTPProxy: add exact path match conditio  | ./v1/httpproxy.go |
+| 2023-05-01 07:39:07  | 6d4c6a099f | cui filter         | fix typos (#5316)                         | ./v1/httpproxy.go, ./v1/tlscertificatedelegation.go |
+| 2023-05-17 10:17:35  | b5469efa7d | Sotiris Nanopoulos | Adds `critical` level for access logging  | ./v1alpha1/contourconfig.go |
+| 2023-05-23 14:56:32  | df302274e6 | Jean-Daniel Dupas  | [provisioner] Add `ipFamilyPolicy` field  | ./v1alpha1/contourdeployment.go |
+| 2023-05-26 09:36:47  | d2df163d42 | Clayton Gonsalves  | HTTPProxy: add regex support for path ma  | ./v1/httpproxy.go |
+| 2023-05-26 16:20:55  | e8f4c683f1 | Steve Kriss        | HTTPProxy: improve godoc for match condi  | ./v1/httpproxy.go |
+| 2023-06-02 15:25:39  | 8fff15bd34 | izturn             | ContourDeployment: add field podAnnotati  | ./v1alpha1/contourdeployment.go |
+| 2023-06-14 10:52:16  | 5a77976028 | Clayton Gonsalves  | Add max_requests_per_connection for clus  | ./v1alpha1/contourconfig.go |
+| 2023-06-23 11:49:36  | 615d553292 | Hassan Shamji      | Enable HTTPProxy Fractional Mirroring (#  | ./v1/httpproxy.go |
+| 2023-06-23 12:19:54  | a1f8c9ea68 | Rajat Vig          | Allow changing per_connection_buffer_lim  | ./v1alpha1/contourconfig.go |
+| 2023-06-28 08:53:00  | 585bdb0fc2 | Steve Kriss        | HTTPProxy: support health check status r  | ./v1/httpproxy.go |
+| 2023-06-28 14:35:31  | d0f1171bd3 | Tero Saarni        | Clarify TLS certificate delegation (#552  | ./v1/httpproxy.go |
+| 2023-07-12 20:11:23  | d259b073da | Rajat Vig          | Allow changing per_connection_buffer_lim  | ./v1alpha1/contourconfig.go |
+| 2023-07-14 15:58:51  | 95f3eab3d6 | Shadi Altarsha     | Add support for General RateLimit Policy  | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
+| 2023-07-24 13:43:12  | f6c112e60a | Sotiris Nanopoulos | HTTPProxy: support case insensitive head  | ./v1/httpproxy.go |
+| 2023-07-28 10:02:14  | d60959ec98 | Sotiris Nanopoulos | Adds support for treating missing header  | ./v1/httpproxy.go |
+| 2023-08-09 18:39:46  | 135c8a9651 | izturn             | make Listener maximum TLS version config  | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
+| 2023-08-15 14:39:07  | e508a4a34f | Tero Saarni        | Added config for socket options for list  | ./v1alpha1/contourconfig.go |
 **Total: 54**
 
 ---
@@ -165,14 +165,14 @@
 
 ## 44: Tag/Release: v1.28.3-6558591/2024-04-25
 
-| Commit Date          | SHA        | Author               | Message                                  | File Path(s)                             |
-|-|-|-|-|-|
-| 2024-03-15 17:23:45  | e1e8c194d2 | gang.liu             | enable disabled for globalExtProc        | ./v1/httpproxy.go |
-| 2024-03-18 17:45:55  | 44ec926490 | izturn               | fix crash & enabled 'disabled' for globa | ./v1/httpproxy.go |
-| 2024-03-19 10:26:32  | 7bb8868886 | gang.liu             | refactor                                 | ./v1/httpproxy.go |
-| 2024-03-21 17:38:52  | 23ae148432 | gang.liu             | fix comments                             | ./v1/httpproxy.go |
-| 2024-04-02 18:21:10  | b1955c6e42 | gang.liu             | refactor                                 | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
-| 2024-04-10 12:58:30  | 6f7010ad81 | izturn               | use EndpointSlices by default (#6149)    | ./v1alpha1/contourconfig.go |
+| Commit Date          | SHA        | Author               | Message                                   | File Path(s)                             |
+|-|-|-|-------------------------------------------|-|
+| 2024-03-15 17:23:45  | e1e8c194d2 | gang.liu             | enable disabled for globalExtProc         | ./v1/httpproxy.go |
+| 2024-03-18 17:45:55  | 44ec926490 | izturn               | fix crash & enabled 'disabled' for global | ./v1/httpproxy.go |
+| 2024-03-19 10:26:32  | 7bb8868886 | gang.liu             | refactor                                  | ./v1/httpproxy.go |
+| 2024-03-21 17:38:52  | 23ae148432 | gang.liu             | fix comments                              | ./v1/httpproxy.go |
+| 2024-04-02 18:21:10  | b1955c6e42 | gang.liu             | refactor                                  | ./v1alpha1/contourconfig.go, ./v1/httpproxy.go |
+| 2024-04-10 12:58:30  | 6f7010ad81 | izturn               | use EndpointSlices by default (#6149)     | ./v1alpha1/contourconfig.go |
 **Total: 6**
 
 ---
