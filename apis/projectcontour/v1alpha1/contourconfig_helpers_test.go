@@ -25,21 +25,6 @@ import (
 )
 
 func TestContourConfigurationSpecValidate(t *testing.T) {
-	t.Run("xds server type validation", func(t *testing.T) {
-		c := contour_v1alpha1.ContourConfigurationSpec{
-			XDSServer: &contour_v1alpha1.XDSServerConfig{},
-		}
-
-		c.XDSServer.Type = contour_v1alpha1.ContourServerType
-		require.NoError(t, c.Validate())
-
-		c.XDSServer.Type = contour_v1alpha1.EnvoyServerType
-		require.NoError(t, c.Validate())
-
-		c.XDSServer.Type = "foo"
-		require.Error(t, c.Validate())
-	})
-
 	t.Run("envoy validation", func(t *testing.T) {
 		c := contour_v1alpha1.ContourConfigurationSpec{
 			Envoy: &contour_v1alpha1.EnvoyConfig{
@@ -319,35 +304,9 @@ func TestFeatureFlagsValidate(t *testing.T) {
 		expected error
 	}{
 		{
-			name:     "valid flag: no value",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices"},
-			expected: nil,
-		},
-		{
-			name:     "valid flag2: empty",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices="},
-			expected: nil,
-		},
-		{
-			name:     "valid flag: true",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=true"},
-			expected: nil,
-		},
-		{
-			name:     "valid flag: false",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=false"},
-			expected: nil,
-		},
-
-		{
 			name:     "invalid flag",
 			flags:    contour_v1alpha1.FeatureFlags{"invalidFlag"},
-			expected: fmt.Errorf("invalid contour configuration, unknown feature flag:invalidFlag"),
-		},
-		{
-			name:     "mix of valid and invalid flags",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices", "invalidFlag"},
-			expected: fmt.Errorf("invalid contour configuration, unknown feature flag:invalidFlag"),
+			expected: fmt.Errorf("invalid contour configuration, unknown feature flag: invalidFlag"),
 		},
 		{
 			name:     "empty flags",
@@ -359,71 +318,6 @@ func TestFeatureFlagsValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.flags.Validate()
-			assert.Equal(t, tt.expected, err)
-		})
-	}
-}
-
-func TestFeatureFlagsIsEndpointSliceEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		flags    contour_v1alpha1.FeatureFlags
-		expected bool
-	}{
-		{
-			name:     "valid flag: no value",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices"},
-			expected: true,
-		},
-		{
-			name:     "valid flag2: empty",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices="},
-			expected: true,
-		},
-		{
-			name:     "valid flag: true",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=true"},
-			expected: true,
-		},
-		{
-			name:     "valid flag: ANY",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=ANY"},
-			expected: true,
-		},
-
-		{
-			name:     "empty flags",
-			flags:    contour_v1alpha1.FeatureFlags{},
-			expected: true,
-		},
-		{
-			name:     "empty string",
-			flags:    contour_v1alpha1.FeatureFlags{""},
-			expected: true,
-		},
-
-		{
-			name:     "multi-flags",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices", "otherFlag"},
-			expected: true,
-		},
-
-		{
-			name:     "valid flag: false",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=false"},
-			expected: false,
-		},
-
-		{
-			name:     "valid flag: FALSE",
-			flags:    contour_v1alpha1.FeatureFlags{"useEndpointSlices=FALSE"},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.flags.IsEndpointSliceEnabled()
 			assert.Equal(t, tt.expected, err)
 		})
 	}

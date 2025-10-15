@@ -24,7 +24,9 @@ import (
 	envoy_mutation_rules_v3 "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
 	envoy_config_core_v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_config_listener_v3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	envoy_compression_brotli_compressor_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/compression/brotli/compressor/v3"
 	envoy_compression_gzip_compressor_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/compression/gzip/compressor/v3"
+	envoy_compression_zstd_compressor_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/compression/zstd/compressor/v3"
 	envoy_filter_http_compressor_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/compressor/v3"
 	envoy_filter_http_cors_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/cors/v3"
 	envoy_filter_http_ext_authz_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_authz/v3"
@@ -43,6 +45,7 @@ import (
 	envoy_transport_socket_tls_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	envoy_type_v3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -174,6 +177,7 @@ const (
 
 type httpConnectionManagerBuilder struct {
 	routeConfigName               string
+	routeConfigSource             *envoy_config_core_v3.ConfigSource
 	metricsPrefix                 string
 	accessLoggers                 []*envoy_config_accesslog_v3.AccessLog
 	requestTimeout                timeout.Setting
@@ -189,10 +193,12 @@ type httpConnectionManagerBuilder struct {
 	serverHeaderTransformation    envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_ServerHeaderTransformation
 	forwardClientCertificate      *dag.ClientCertificateDetails
 	numTrustedHops                uint32
+	stripTrailingHostDot          bool
 	tracingConfig                 *envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_Tracing
 	maxRequestsPerConnection      *uint32
 	http2MaxConcurrentStreams     *uint32
 	enableWebsockets              bool
+	compression                   *contour_v1alpha1.EnvoyCompression
 }
 
 func (b *httpConnectionManagerBuilder) EnableWebsockets(enable bool) *httpConnectionManagerBuilder {
@@ -276,6 +282,18 @@ func (b *httpConnectionManagerBuilder) MergeSlashes(enabled bool) *httpConnectio
 	return b
 }
 
+// Compression configures the builder to set the compression method applied by DefaultFilters() to the
+// given value `compressor`.
+// When chaining builder method calls, this method must be called before DefaultFilters().
+func (b *httpConnectionManagerBuilder) Compression(compressor *contour_v1alpha1.EnvoyCompression) *httpConnectionManagerBuilder {
+	// Enforce that the function must be called in a specific order.
+	if len(b.filters) > 0 {
+		panic("Compression must be set before adding filters")
+	}
+	b.compression = compressor
+	return b
+}
+
 func (b *httpConnectionManagerBuilder) ServerHeaderTransformation(value contour_v1alpha1.ServerHeaderTransformationType) *httpConnectionManagerBuilder {
 	switch value {
 	case contour_v1alpha1.OverwriteServerHeader:
@@ -298,6 +316,11 @@ func (b *httpConnectionManagerBuilder) NumTrustedHops(num uint32) *httpConnectio
 	return b
 }
 
+func (b *httpConnectionManagerBuilder) StripTrailingHostDot(strip bool) *httpConnectionManagerBuilder {
+	b.stripTrailingHostDot = strip
+	return b
+}
+
 // MaxRequestsPerConnection sets max requests per connection for the downstream.
 func (b *httpConnectionManagerBuilder) MaxRequestsPerConnection(maxRequestsPerConnection *uint32) *httpConnectionManagerBuilder {
 	b.maxRequestsPerConnection = maxRequestsPerConnection
@@ -313,34 +336,56 @@ func (b *httpConnectionManagerBuilder) DefaultFilters() *httpConnectionManagerBu
 	// Add a default set of ordered http filters.
 	// The names are not required to match anything and are
 	// identified by the TypeURL of each filter.
-	b.filters = append(b.filters,
-		&envoy_filter_network_http_connection_manager_v3.HttpFilter{
-			Name: CompressorFilterName,
-			ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
-				TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_compressor_v3.Compressor{
-					CompressorLibrary: &envoy_config_core_v3.TypedExtensionConfig{
-						Name: "gzip",
-						TypedConfig: protobuf.MustMarshalAny(
-							&envoy_compression_gzip_compressor_v3.Gzip{},
-						),
-					},
-					ResponseDirectionConfig: &envoy_filter_http_compressor_v3.Compressor_ResponseDirectionConfig{
-						CommonConfig: &envoy_filter_http_compressor_v3.Compressor_CommonDirectionConfig{
-							ContentType: []string{
-								// Default content-types https://github.com/envoyproxy/envoy/blob/e74999dbdb12aa4d6b7a5d62d51731ea86bf72be/source/extensions/filters/http/compressor/compressor_filter.cc#L35-L38
-								"text/html", "text/plain", "text/css", "application/javascript", "application/x-javascript",
-								"text/javascript", "text/x-javascript", "text/ecmascript", "text/js", "text/jscript",
-								"text/x-js", "application/ecmascript", "application/x-json", "application/xml",
-								"application/json", "image/svg+xml", "text/xml", "application/xhtml+xml",
-								// Additional content-types for grpc-web https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-WEB.md#protocol-differences-vs-grpc-over-http2
-								"application/grpc-web", "application/grpc-web+proto", "application/grpc-web+json", "application/grpc-web+thrift",
-								"application/grpc-web-text", "application/grpc-web-text+proto", "application/grpc-web-text+thrift",
+	var compressor proto.Message = &envoy_compression_gzip_compressor_v3.Gzip{}
+	compressorName := string(contour_v1alpha1.GzipCompression)
+	if b.compression != nil {
+		switch b.compression.Algorithm {
+		case contour_v1alpha1.BrotliCompression:
+			compressorName = "brotli"
+			compressor = &envoy_compression_brotli_compressor_v3.Brotli{}
+		case contour_v1alpha1.DisabledCompression:
+			compressor = nil
+		case contour_v1alpha1.ZstdCompression:
+			compressorName = "zstd"
+			compressor = &envoy_compression_zstd_compressor_v3.Zstd{}
+		default:
+			compressorName = "gzip"
+			compressor = &envoy_compression_gzip_compressor_v3.Gzip{}
+		}
+	}
+
+	if compressor != nil {
+		// If compression is enabled add compressor filter
+		b.filters = append(b.filters,
+			&envoy_filter_network_http_connection_manager_v3.HttpFilter{
+				Name: CompressorFilterName,
+				ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
+					TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_compressor_v3.Compressor{
+						CompressorLibrary: &envoy_config_core_v3.TypedExtensionConfig{
+							Name: compressorName,
+							TypedConfig: protobuf.MustMarshalAny(
+								compressor,
+							),
+						},
+						ResponseDirectionConfig: &envoy_filter_http_compressor_v3.Compressor_ResponseDirectionConfig{
+							CommonConfig: &envoy_filter_http_compressor_v3.Compressor_CommonDirectionConfig{
+								ContentType: []string{
+									// Default content-types https://github.com/envoyproxy/envoy/blob/e74999dbdb12aa4d6b7a5d62d51731ea86bf72be/source/extensions/filters/http/compressor/compressor_filter.cc#L35-L38
+									"text/html", "text/plain", "text/css", "application/javascript", "application/x-javascript",
+									"text/javascript", "text/x-javascript", "text/ecmascript", "text/js", "text/jscript",
+									"text/x-js", "application/ecmascript", "application/x-json", "application/xml",
+									"application/json", "image/svg+xml", "text/xml", "application/xhtml+xml",
+									// Additional content-types for grpc-web https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-WEB.md#protocol-differences-vs-grpc-over-http2
+									"application/grpc-web", "application/grpc-web+proto", "application/grpc-web+json", "application/grpc-web+thrift",
+									"application/grpc-web-text", "application/grpc-web-text+proto", "application/grpc-web-text+thrift",
+								},
 							},
 						},
-					},
-				}),
-			},
-		},
+					}),
+				},
+			})
+	}
+	b.filters = append(b.filters,
 		&envoy_filter_network_http_connection_manager_v3.HttpFilter{
 			Name: GRPCWebFilterName,
 			ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
@@ -495,7 +540,7 @@ func (b *httpConnectionManagerBuilder) Get() *envoy_config_listener_v3.Filter {
 		RouteSpecifier: &envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_Rds{
 			Rds: &envoy_filter_network_http_connection_manager_v3.Rds{
 				RouteConfigName: b.routeConfigName,
-				ConfigSource:    ConfigSource("contour"),
+				ConfigSource:    b.routeConfigSource,
 			},
 		},
 		Tracing:     b.tracingConfig,
@@ -510,8 +555,9 @@ func (b *httpConnectionManagerBuilder) Get() *envoy_config_listener_v3.Filter {
 			AllowChunkedLength: b.allowChunkedLength,
 		},
 
-		UseRemoteAddress:  wrapperspb.Bool(true),
-		XffNumTrustedHops: b.numTrustedHops,
+		UseRemoteAddress:     wrapperspb.Bool(true),
+		XffNumTrustedHops:    b.numTrustedHops,
+		StripTrailingHostDot: b.stripTrailingHostDot,
 
 		NormalizePath: wrapperspb.Bool(true),
 
@@ -585,8 +631,8 @@ func (b *httpConnectionManagerBuilder) Get() *envoy_config_listener_v3.Filter {
 
 // HTTPConnectionManager creates a new HTTP Connection Manager filter
 // for the supplied route, access log, and client request timeout.
-func HTTPConnectionManager(routename string, accesslogger []*envoy_config_accesslog_v3.AccessLog, requestTimeout time.Duration) *envoy_config_listener_v3.Filter {
-	return HTTPConnectionManagerBuilder().
+func (e *EnvoyGen) HTTPConnectionManager(routename string, accesslogger []*envoy_config_accesslog_v3.AccessLog, requestTimeout time.Duration) *envoy_config_listener_v3.Filter {
+	return e.HTTPConnectionManagerBuilder().
 		RouteConfigName(routename).
 		MetricsPrefix(routename).
 		AccessLoggers(accesslogger).
@@ -597,8 +643,10 @@ func HTTPConnectionManager(routename string, accesslogger []*envoy_config_access
 
 // HTTPConnectionManagerBuilder creates a new HTTP connection manager builder.
 // nolint:revive
-func HTTPConnectionManagerBuilder() *httpConnectionManagerBuilder {
-	return &httpConnectionManagerBuilder{}
+func (e *EnvoyGen) HTTPConnectionManagerBuilder() *httpConnectionManagerBuilder {
+	return &httpConnectionManagerBuilder{
+		routeConfigSource: e.GetConfigSource(),
+	}
 }
 
 // TCPProxy creates a new TCPProxy filter.
@@ -676,8 +724,8 @@ func TCPProxy(statPrefix string, proxy *dag.TCPProxy, accesslogger []*envoy_conf
 	}
 }
 
-// UnixSocketAddress creates a new Unix Socket envoy_config_core_v3.Address.
-func UnixSocketAddress(address string) *envoy_config_core_v3.Address {
+// unixSocketAddress creates a new Unix Socket envoy_config_core_v3.Address.
+func unixSocketAddress(address string) *envoy_config_core_v3.Address {
 	return &envoy_config_core_v3.Address{
 		Address: &envoy_config_core_v3.Address_Pipe{
 			Pipe: &envoy_config_core_v3.Pipe{
@@ -690,6 +738,7 @@ func UnixSocketAddress(address string) *envoy_config_core_v3.Address {
 
 // SocketAddress creates a new TCP envoy_config_core_v3.Address.
 func SocketAddress(address string, port int) *envoy_config_core_v3.Address {
+	portValue := uint32(port) //nolint:gosec // disable G115
 	if address == "::" {
 		return &envoy_config_core_v3.Address{
 			Address: &envoy_config_core_v3.Address_SocketAddress{
@@ -698,7 +747,7 @@ func SocketAddress(address string, port int) *envoy_config_core_v3.Address {
 					Address:    address,
 					Ipv4Compat: true,
 					PortSpecifier: &envoy_config_core_v3.SocketAddress_PortValue{
-						PortValue: uint32(port),
+						PortValue: portValue,
 					},
 				},
 			},
@@ -710,7 +759,7 @@ func SocketAddress(address string, port int) *envoy_config_core_v3.Address {
 				Protocol: envoy_config_core_v3.SocketAddress_TCP,
 				Address:  address,
 				PortSpecifier: &envoy_config_core_v3.SocketAddress_PortValue{
-					PortValue: uint32(port),
+					PortValue: portValue,
 				},
 			},
 		},
@@ -834,7 +883,7 @@ func FilterExtProc(extProc *dag.ExtProc) *envoy_filter_network_http_connection_m
 	}
 
 	extProcConfig := envoy_filter_http_ext_proc_v3.ExternalProcessor{
-		GrpcService:            GrpcService(extProc.ExtProcService.Name, extProc.ExtProcService.SNI, extProc.ResponseTimeout),
+		GrpcService:            grpcService(extProc.ExtProcService.Name, extProc.ExtProcService.SNI, extProc.ResponseTimeout),
 		FailureModeAllow:       extProc.FailOpen,
 		ProcessingMode:         makeProcessMode(extProc.ProcessingMode),
 		MessageTimeout:         envoy.Timeout(extProc.ResponseTimeout),
@@ -863,7 +912,7 @@ func FilterExtProc(extProc *dag.ExtProc) *envoy_filter_network_http_connection_m
 func FilterExternalAuthz(externalAuthorization *dag.ExternalAuthorization) *envoy_filter_network_http_connection_manager_v3.HttpFilter {
 	authConfig := envoy_filter_http_ext_authz_v3.ExtAuthz{
 		Services: &envoy_filter_http_ext_authz_v3.ExtAuthz_GrpcService{
-			GrpcService: GrpcService(externalAuthorization.AuthorizationService.Name, externalAuthorization.AuthorizationService.SNI, externalAuthorization.AuthorizationResponseTimeout),
+			GrpcService: grpcService(externalAuthorization.AuthorizationService.Name, externalAuthorization.AuthorizationService.SNI, externalAuthorization.AuthorizationResponseTimeout),
 		},
 		// Pretty sure we always want this. Why have an
 		// external auth service if it is not going to affect
@@ -996,8 +1045,8 @@ func FilterChainTLSFallback(downstream *envoy_transport_socket_tls_v3.Downstream
 	return fc
 }
 
-// GRPCService returns a envoy_config_core_v3.GrpcService for the given parameters.
-func GrpcService(clusterName, sni string, timeout timeout.Setting) *envoy_config_core_v3.GrpcService {
+// grpcService returns a envoy_config_core_v3.GrpcService for the given parameters.
+func grpcService(clusterName, sni string, timeout timeout.Setting) *envoy_config_core_v3.GrpcService {
 	authority := strings.ReplaceAll(clusterName, "/", ".")
 	if sni != "" {
 		authority = sni

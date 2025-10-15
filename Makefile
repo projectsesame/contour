@@ -40,7 +40,7 @@ endif
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Base build image to use.
-BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.22.5
+BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.25.1
 
 # Enable build with CGO.
 BUILD_CGO_ENABLED ?= 0
@@ -196,7 +196,7 @@ lint-codespell:
 .PHONY: lint-golint
 lint-golint:
 	@echo Running Go linter ...
-	@./hack/golangci-lint run --build-tags=e2e,conformance,tools,gcp,oidc,none
+	@./hack/golangci-lint run --build-tags=e2e,conformance,gcp,oidc,none
 
 .PHONY: lint-yamllint
 lint-yamllint:
@@ -210,6 +210,7 @@ lint-yamllint:
 # the first rule.
 .PHONY: lint-flags
 lint-flags:
+	@echo Running lint-flags ...
 	@if git --no-pager grep --extended-regexp '[.]Flag\("[^"]+", "([^A-Zxg][^"]+|[^"]+[^.])"' cmd/contour; then \
 		echo "ERROR: CLI flag help strings must start with a capital and end with a period."; \
 		exit 2; \
@@ -256,7 +257,7 @@ generate-crd-yaml:
 .PHONY: generate-gateway-yaml
 generate-gateway-yaml:
 	@echo "Generating Gateway API CRD YAML documents..."
-	@GATEWAY_API_VERSION=$(GATEWAY_API_VERSION)  https_proxy=https://127.0.0.1:7890   ./hack/generate-gateway-yaml.sh
+	@GATEWAY_API_VERSION=$(GATEWAY_API_VERSION) ./hack/generate-gateway-yaml.sh
 
 
 .PHONY: generate-api-docs

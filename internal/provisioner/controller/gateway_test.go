@@ -98,7 +98,7 @@ func TestGatewayReconcile(t *testing.T) {
 		}
 	}
 
-	makeGatewayWithAddrs := func(addrs []gatewayapi_v1.GatewayAddress) *gatewayapi_v1.Gateway {
+	makeGatewayWithAddrs := func(addrs []gatewayapi_v1.GatewaySpecAddress) *gatewayapi_v1.Gateway {
 		gtw := makeGateway()
 		gtw.Spec.Addresses = addrs
 		return gtw
@@ -223,7 +223,7 @@ func TestGatewayReconcile(t *testing.T) {
 		},
 		"A gateway with one IP address results in an Envoy service with loadBalancerIP set to that IP address": {
 			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
-			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewayAddress{
+			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewaySpecAddress{
 				{
 					Type:  ptr.To(gatewayapi_v1.IPAddressType),
 					Value: "172.18.255.207",
@@ -237,7 +237,7 @@ func TestGatewayReconcile(t *testing.T) {
 		},
 		"A gateway with two IP addresses results in an Envoy service with loadBalancerIP set to the first IP address": {
 			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
-			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewayAddress{
+			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewaySpecAddress{
 				{
 					Type:  ptr.To(gatewayapi_v1.IPAddressType),
 					Value: "172.18.255.207",
@@ -254,7 +254,7 @@ func TestGatewayReconcile(t *testing.T) {
 		},
 		"A gateway with one Hostname address results in an Envoy service with loadBalancerIP set to that hostname": {
 			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
-			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewayAddress{
+			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewaySpecAddress{
 				{
 					Type:  ptr.To(gatewayapi_v1.HostnameAddressType),
 					Value: "projectcontour.io",
@@ -267,7 +267,7 @@ func TestGatewayReconcile(t *testing.T) {
 		},
 		"A gateway with two Hostname addresses results in an Envoy service with loadBalancerIP set to the first hostname": {
 			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
-			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewayAddress{
+			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewaySpecAddress{
 				{
 					Type:  ptr.To(gatewayapi_v1.HostnameAddressType),
 					Value: "projectcontour.io",
@@ -284,7 +284,7 @@ func TestGatewayReconcile(t *testing.T) {
 		},
 		"A gateway with one custom address type results in an Envoy service with no loadBalancerIP": {
 			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
-			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewayAddress{
+			gateway: makeGatewayWithAddrs([]gatewayapi_v1.GatewaySpecAddress{
 				{
 					Type:  ptr.To(gatewayapi_v1.AddressType("acme.io/CustomAddressType")),
 					Value: "custom-address-types-are-not-supported",
@@ -683,7 +683,7 @@ func TestGatewayReconcile(t *testing.T) {
 				require.NotNil(t, deploy.Spec.Replicas)
 				assert.EqualValues(t, 4, *deploy.Spec.Replicas)
 				require.NotNil(t, deploy.Spec.Strategy)
-				assert.EqualValues(t, apps_v1.RecreateDeploymentStrategyType, deploy.Spec.Strategy.Type)
+				assert.Equal(t, apps_v1.RecreateDeploymentStrategyType, deploy.Spec.Strategy.Type)
 			},
 		},
 		"If ContourDeployment.Spec.Contour.NodePlacement is not specified, the Contour deployment has no node selector or tolerations set": {
@@ -1054,7 +1054,7 @@ func TestGatewayReconcile(t *testing.T) {
 				assert.EqualValues(t, 6, *deploy.Spec.Replicas)
 
 				assert.NotNil(t, deploy.Spec.Strategy)
-				assert.EqualValues(t, apps_v1.RecreateDeploymentStrategyType, deploy.Spec.Strategy.Type)
+				assert.Equal(t, apps_v1.RecreateDeploymentStrategyType, deploy.Spec.Strategy.Type)
 
 				// Verify that a daemonset has *not* been created
 				ds := &apps_v1.DaemonSet{
@@ -1101,7 +1101,7 @@ func TestGatewayReconcile(t *testing.T) {
 					},
 				}
 				require.NoError(t, r.client.Get(context.Background(), keyFor(ds), ds))
-				assert.Contains(t, ds.Spec.Template.ObjectMeta.Annotations, "key")
+				assert.Contains(t, ds.Spec.Template.Annotations, "key")
 			},
 		},
 
@@ -1181,6 +1181,56 @@ func TestGatewayReconcile(t *testing.T) {
 			},
 		},
 
+		"If ContourDeployment.Spec.Envoy.OverloadMaxDownstreamConnections is specified, the envoy-initconfig container's arguments contain --overload-downstream-max-conn": {
+			gatewayClass: reconcilableGatewayClassWithParams("gatewayclass-1", controller),
+			gatewayClassParams: &contour_v1alpha1.ContourDeployment{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "projectcontour",
+					Name:      "gatewayclass-1-params",
+				},
+				Spec: contour_v1alpha1.ContourDeploymentSpec{
+					Envoy: &contour_v1alpha1.EnvoySettings{
+						OverloadMaxDownstreamConnections: 20000000,
+					},
+				},
+			},
+			gateway: makeGateway(),
+			assertions: func(t *testing.T, r *gatewayReconciler, _ *gatewayapi_v1.Gateway, _ error) {
+				ds := &apps_v1.DaemonSet{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "gateway-1",
+						Name:      "envoy-gateway-1",
+					},
+				}
+				require.NoError(t, r.client.Get(context.Background(), keyFor(ds), ds))
+				assert.Contains(t, ds.Spec.Template.Spec.InitContainers[0].Args, "--overload-downstream-max-conn=20000000")
+			},
+		},
+
+		"If ContourDeployment.Spec.Envoy.OverloadMaxDownstreamConnections is not specified, the envoy-initconfig container's arguments contain --overload-downstream-max-conn=0": {
+			gatewayClass: reconcilableGatewayClassWithParams("gatewayclass-1", controller),
+			gatewayClassParams: &contour_v1alpha1.ContourDeployment{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "projectcontour",
+					Name:      "gatewayclass-1-params",
+				},
+				Spec: contour_v1alpha1.ContourDeploymentSpec{
+					Envoy: &contour_v1alpha1.EnvoySettings{},
+				},
+			},
+			gateway: makeGateway(),
+			assertions: func(t *testing.T, r *gatewayReconciler, _ *gatewayapi_v1.Gateway, _ error) {
+				ds := &apps_v1.DaemonSet{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "gateway-1",
+						Name:      "envoy-gateway-1",
+					},
+				}
+				require.NoError(t, r.client.Get(context.Background(), keyFor(ds), ds))
+				assert.Contains(t, ds.Spec.Template.Spec.InitContainers[0].Args, "--overload-downstream-max-conn=0")
+			},
+		},
+
 		"If ContourDeployment.Spec.Contour.PodAnnotations is specified, the Contour pods' have annotations for prometheus & user-defined": {
 			gatewayClass: reconcilableGatewayClassWithParams("gatewayclass-1", controller),
 			gatewayClassParams: &contour_v1alpha1.ContourDeployment{
@@ -1215,7 +1265,7 @@ func TestGatewayReconcile(t *testing.T) {
 				}
 
 				require.NoError(t, r.client.Get(context.Background(), keyFor(deploy), deploy))
-				assert.Contains(t, deploy.Spec.Template.ObjectMeta.Annotations, "key")
+				assert.Contains(t, deploy.Spec.Template.Annotations, "key")
 			},
 		},
 
@@ -1256,7 +1306,7 @@ func TestGatewayReconcile(t *testing.T) {
 					},
 				}
 				require.NoError(t, r.client.Get(context.Background(), keyFor(ds), ds))
-				assert.EqualValues(t, apps_v1.OnDeleteDaemonSetStrategyType, ds.Spec.UpdateStrategy.Type)
+				assert.Equal(t, apps_v1.OnDeleteDaemonSetStrategyType, ds.Spec.UpdateStrategy.Type)
 
 				// Verify that a deployment has *not* been created
 				deployment := &apps_v1.Deployment{
@@ -1279,13 +1329,13 @@ func TestGatewayReconcile(t *testing.T) {
 				Spec: gatewayapi_v1.GatewaySpec{
 					GatewayClassName: gatewayapi_v1.ObjectName("gatewayclass-1"),
 					Infrastructure: &gatewayapi_v1.GatewayInfrastructure{
-						Labels: map[gatewayapi_v1.AnnotationKey]gatewayapi_v1.AnnotationValue{
-							gatewayapi_v1.AnnotationKey("projectcontour.io/label-1"): gatewayapi_v1.AnnotationValue("label-value-1"),
-							gatewayapi_v1.AnnotationKey("projectcontour.io/label-2"): gatewayapi_v1.AnnotationValue("label-value-2"),
+						Labels: map[gatewayapi_v1.LabelKey]gatewayapi_v1.LabelValue{
+							"projectcontour.io/label-1": "label-value-1",
+							"projectcontour.io/label-2": "label-value-2",
 						},
 						Annotations: map[gatewayapi_v1.AnnotationKey]gatewayapi_v1.AnnotationValue{
-							gatewayapi_v1.AnnotationKey("projectcontour.io/annotation-1"): gatewayapi_v1.AnnotationValue("annotation-value-1"),
-							gatewayapi_v1.AnnotationKey("projectcontour.io/annotation-2"): gatewayapi_v1.AnnotationValue("annotation-value-2"),
+							"projectcontour.io/annotation-1": "annotation-value-1",
+							"projectcontour.io/annotation-2": "annotation-value-2",
 						},
 					},
 				},

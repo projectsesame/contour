@@ -234,8 +234,8 @@ func verifyTLSFlags(contourXDSTLS *contour_v1alpha1.TLS) error {
 	if contourXDSTLS.CAFile == "" && contourXDSTLS.CertFile == "" && contourXDSTLS.KeyFile == "" {
 		return errors.New("no TLS parameters and --insecure not supplied. You must supply one or the other")
 	}
-	// If one of the three TLS commands is not empty, they all must be not empty
-	if !(contourXDSTLS.CAFile != "" && contourXDSTLS.CertFile != "" && contourXDSTLS.KeyFile != "") {
+	// If one of the three TLS flags is not empty, they all must be not empty
+	if contourXDSTLS.CAFile == "" || contourXDSTLS.CertFile == "" || contourXDSTLS.KeyFile == "" {
 		return errors.New("you must supply all three TLS parameters - --contour-cafile, --contour-cert-file, --contour-key-file, or none of them")
 	}
 
@@ -333,6 +333,24 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 		accessLogLevel = contour_v1alpha1.LogLevelCritical
 	case config.LogLevelDisabled:
 		accessLogLevel = contour_v1alpha1.LogLevelDisabled
+	}
+
+	var compression *contour_v1alpha1.EnvoyCompression
+	if ctx.Config.Compression.Algorithm != "" {
+		var algorithm contour_v1alpha1.CompressionAlgorithm
+		switch ctx.Config.Compression.Algorithm {
+		case config.CompressionBrotli:
+			algorithm = contour_v1alpha1.BrotliCompression
+		case config.CompressionDisabled:
+			algorithm = contour_v1alpha1.DisabledCompression
+		case config.CompressionGzip:
+			algorithm = contour_v1alpha1.GzipCompression
+		case config.CompressionZstd:
+			algorithm = contour_v1alpha1.ZstdCompression
+		}
+		compression = &contour_v1alpha1.EnvoyCompression{
+			Algorithm: algorithm,
+		}
 	}
 
 	var defaultHTTPVersions []contour_v1alpha1.HTTPVersionType
@@ -520,6 +538,14 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 		Port:    ctx.statsPort,
 	}
 
+	var envoyOMEnforcedHealthListenerConfig *contour_v1alpha1.HealthConfig
+	if ctx.Config.OMEnforcedHealthListener != nil {
+		envoyOMEnforcedHealthListenerConfig = &contour_v1alpha1.HealthConfig{
+			Address: ctx.Config.OMEnforcedHealthListener.Address,
+			Port:    ctx.Config.OMEnforcedHealthListener.Port,
+		}
+	}
+
 	// Override metrics endpoint info from config files
 	//
 	// Note!
@@ -544,6 +570,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 		Envoy: &contour_v1alpha1.EnvoyConfig{
 			Listener: &contour_v1alpha1.EnvoyListenerConfig{
 				UseProxyProto:                 &ctx.useProxyProto,
+				Compression:                   compression,
 				DisableAllowChunkedLength:     &ctx.Config.DisableAllowChunkedLength,
 				DisableMergeSlashes:           &ctx.Config.DisableMergeSlashes,
 				ServerHeaderTransformation:    serverHeaderTransformation,
@@ -603,9 +630,11 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 				},
 			},
 			Network: &contour_v1alpha1.NetworkParameters{
-				XffNumTrustedHops: &ctx.Config.Network.XffNumTrustedHops,
-				EnvoyAdminPort:    &ctx.Config.Network.EnvoyAdminPort,
+				XffNumTrustedHops:         &ctx.Config.Network.XffNumTrustedHops,
+				EnvoyAdminPort:            &ctx.Config.Network.EnvoyAdminPort,
+				EnvoyStripTrailingHostDot: &ctx.Config.Network.EnvoyStripTrailingHostDot,
 			},
+			OMEnforcedHealth: envoyOMEnforcedHealthListenerConfig,
 		},
 		Gateway: gatewayConfig,
 		HTTPProxy: &contour_v1alpha1.HTTPProxyConfig{
@@ -623,13 +652,7 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 		FeatureFlags:                ctx.Config.FeatureFlags,
 	}
 
-	xdsServerType := contour_v1alpha1.ContourServerType
-	if ctx.Config.Server.XDSServerType == config.EnvoyServerType {
-		xdsServerType = contour_v1alpha1.EnvoyServerType
-	}
-
 	contourConfiguration.XDSServer = &contour_v1alpha1.XDSServerConfig{
-		Type:    xdsServerType,
 		Address: ctx.xdsAddr,
 		Port:    ctx.xdsPort,
 		TLS: &contour_v1alpha1.TLS{

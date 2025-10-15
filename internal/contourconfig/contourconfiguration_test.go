@@ -30,7 +30,6 @@ import (
 func TestOverlayOnDefaults(t *testing.T) {
 	allFieldsSpecified := contour_v1alpha1.ContourConfigurationSpec{
 		XDSServer: &contour_v1alpha1.XDSServerConfig{
-			Type:    contour_v1alpha1.EnvoyServerType,
 			Address: "7.7.7.7",
 			Port:    7777,
 			TLS: &contour_v1alpha1.TLS{
@@ -54,11 +53,14 @@ func TestOverlayOnDefaults(t *testing.T) {
 		},
 		Envoy: &contour_v1alpha1.EnvoyConfig{
 			Listener: &contour_v1alpha1.EnvoyListenerConfig{
-				UseProxyProto:              ptr.To(true),
-				DisableAllowChunkedLength:  ptr.To(true),
-				DisableMergeSlashes:        ptr.To(true),
+				UseProxyProto: ptr.To(true),
+				Compression: &contour_v1alpha1.EnvoyCompression{
+					Algorithm: contour_v1alpha1.BrotliCompression,
+				},
 				MaxRequestsPerConnection:   ptr.To(uint32(1)),
 				HTTP2MaxConcurrentStreams:  ptr.To(uint32(10)),
+				DisableAllowChunkedLength:  ptr.To(true),
+				DisableMergeSlashes:        ptr.To(true),
 				ServerHeaderTransformation: contour_v1alpha1.PassThroughServerHeader,
 				ConnectionBalancer:         "yesplease",
 				TLS: &contour_v1alpha1.EnvoyTLS{
@@ -131,8 +133,9 @@ func TestOverlayOnDefaults(t *testing.T) {
 				},
 			},
 			Network: &contour_v1alpha1.NetworkParameters{
-				XffNumTrustedHops: ptr.To(uint32(77)),
-				EnvoyAdminPort:    ptr.To(9997),
+				XffNumTrustedHops:         ptr.To(uint32(77)),
+				EnvoyAdminPort:            ptr.To(9997),
+				EnvoyStripTrailingHostDot: ptr.To(true),
 			},
 			EnableStatPrefix: ptr.To(false),
 		},

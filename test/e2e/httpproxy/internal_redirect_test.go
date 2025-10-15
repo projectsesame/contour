@@ -111,7 +111,7 @@ func doInternalRedirectTest(namespace string, proxy *contour_v1.HTTPProxy, t Gin
 		},
 		Spec: core_v1.ServiceSpec{
 			Type:         core_v1.ServiceTypeExternalName,
-			ExternalName: f.Deployment.EnvoyService.ObjectMeta.Name + "." + f.Deployment.EnvoyService.ObjectMeta.Namespace,
+			ExternalName: f.Deployment.EnvoyService.Name + "." + f.Deployment.EnvoyService.Namespace,
 			Ports: []core_v1.ServicePort{
 				{
 					Name: "http",
@@ -190,7 +190,7 @@ func getInternalRedirectHTTPProxy(namespace string) *contour_v1.HTTPProxy {
 					Services: []contour_v1.Service{},
 					RequestRedirectPolicy: &contour_v1.HTTPRequestRedirectPolicy{
 						Hostname:   ptr.To(fqdn),
-						StatusCode: ptr.To(302),
+						StatusCode: ptr.To(contour_v1.RedirectResponseCode(302)),
 						Path:       ptr.To("/echo"),
 					},
 				},

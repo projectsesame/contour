@@ -1968,7 +1968,9 @@ When empty, port (if specified) of the request is used.</p>
 <code>statusCode</code>
 <br>
 <em>
-int
+<a href="#projectcontour.io/v1.RedirectResponseCode">
+RedirectResponseCode
+</a>
 </em>
 </td>
 <td>
@@ -3692,7 +3694,8 @@ service (RLS) for a rate limit decision on each request.</p>
 (<code>uint32</code> alias)</p></h3>
 <p>
 (<em>Appears on:</em>
-<a href="#projectcontour.io/v1.HTTPInternalRedirectPolicy">HTTPInternalRedirectPolicy</a>)
+<a href="#projectcontour.io/v1.HTTPInternalRedirectPolicy">HTTPInternalRedirectPolicy</a>, 
+<a href="#projectcontour.io/v1.HTTPRequestRedirectPolicy">HTTPRequestRedirectPolicy</a>)
 </p>
 <p>
 <p>RedirectResponseCode is a uint32 type alias with validation to ensure that the value is valid.</p>
@@ -4125,11 +4128,14 @@ Ignored if NumRetries is not supplied.</p>
 <li><code>5xx</code></li>
 <li><code>gateway-error</code></li>
 <li><code>reset</code></li>
+<li><code>reset-before-request</code></li>
 <li><code>connect-failure</code></li>
+<li><code>envoy-ratelimited</code></li>
 <li><code>retriable-4xx</code></li>
 <li><code>refused-stream</code></li>
 <li><code>retriable-status-codes</code></li>
 <li><code>retriable-headers</code></li>
+<li><code>http3-post-connect-failure</code></li>
 </ul>
 <p>Supported <a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#x-envoy-retry-grpc-on">gRPC conditions</a>:</p>
 <ul>
@@ -5843,11 +5849,7 @@ FeatureFlags
 </em>
 </td>
 <td>
-<p>FeatureFlags defines toggle to enable new contour features.
-Available toggles are:
-useEndpointSlices - Configures contour to fetch endpoint data
-from k8s endpoint slices. defaults to true,
-If false then reads endpoint data from the k8s endpoints.</p>
+<p>FeatureFlags defines toggle to enable new contour features.</p>
 </td>
 </tr>
 <tr>
@@ -6537,6 +6539,37 @@ EnvoyTLS
 </tr>
 </tbody>
 </table>
+<h3 id="projectcontour.io/v1alpha1.CompressionAlgorithm">CompressionAlgorithm
+(<code>string</code> alias)</p></h3>
+<p>
+(<em>Appears on:</em>
+<a href="#projectcontour.io/v1alpha1.EnvoyCompression">EnvoyCompression</a>)
+</p>
+<p>
+<p>CompressionAlgorithm defines the type of compression algorithm applied in default HTTP listener filter chain.
+Allowable values are defined as names of well known compression algorithms (plus &ldquo;disabled&rdquo;).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;brotli&#34;</p></td>
+<td><p>BrotliCompression specifies brotli as the default HTTP filter chain compression mechanism</p>
+</td>
+</tr><tr><td><p>&#34;disabled&#34;</p></td>
+<td><p>DisabledCompression specifies that there will be no compression in the default HTTP filter chain</p>
+</td>
+</tr><tr><td><p>&#34;gzip&#34;</p></td>
+<td><p>GzipCompression specifies gzip as the default HTTP filter chain compression mechanism</p>
+</td>
+</tr><tr><td><p>&#34;zstd&#34;</p></td>
+<td><p>ZstdCompression specifies zstd as the default HTTP filter chain compression mechanism</p>
+</td>
+</tr></tbody>
+</table>
 <h3 id="projectcontour.io/v1alpha1.ContourConfigurationSpec">ContourConfigurationSpec
 </h3>
 <p>
@@ -6768,11 +6801,7 @@ FeatureFlags
 </em>
 </td>
 <td>
-<p>FeatureFlags defines toggle to enable new contour features.
-Available toggles are:
-useEndpointSlices - Configures contour to fetch endpoint data
-from k8s endpoint slices. defaults to true,
-If false then reads endpoint data from the k8s endpoints.</p>
+<p>FeatureFlags defines toggle to enable new contour features.</p>
 </td>
 </tr>
 <tr>
@@ -7145,6 +7174,10 @@ defaults to 365.</p>
 <h3 id="projectcontour.io/v1alpha1.CustomTag">CustomTag
 </h3>
 <p>
+(<em>Appears on:</em>
+<a href="#projectcontour.io/v1alpha1.TracingConfig">TracingConfig</a>)
+</p>
+<p>
 <p>CustomTag defines custom tags with unique tag name
 to create tags for the active span.</p>
 </p>
@@ -7323,6 +7356,42 @@ Kubernetes apps/v1.DeploymentStrategy
 <td>
 <em>(Optional)</em>
 <p>Strategy describes the deployment strategy to use to replace existing pods with new pods.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="projectcontour.io/v1alpha1.EnvoyCompression">EnvoyCompression
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#projectcontour.io/v1alpha1.EnvoyListenerConfig">EnvoyListenerConfig</a>)
+</p>
+<p>
+<p>EnvoyCompression defines configuration related to compression in the default HTTP Listener filter chain.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="white-space:nowrap">
+<code>algorithm</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.CompressionAlgorithm">
+CompressionAlgorithm
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Algorithm selects the response compression type applied in the compression HTTP filter of the default Listener filters.
+Values: <code>gzip</code> (default), <code>brotli</code>, <code>zstd</code>, <code>disabled</code>.
+Setting this to <code>disabled</code> will make Envoy skip &ldquo;Accept-Encoding: gzip,deflate&rdquo; request header and always return uncompressed response.</p>
 </td>
 </tr>
 </tbody>
@@ -7552,6 +7621,25 @@ bool
 <p>Set StatPrefix on envoy routes</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>omEnforcedHealth</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.HealthConfig">
+HealthConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OMEnforcedHealth defines the endpoint Envoy uses to serve health checks with
+the envoy overload manager actions, such as global connection limits, enforced.</p>
+<p>The configured values must be different from the endpoints
+configured by [EnvoyConfig.Metrics] and [EnvoyConfig.Health]</p>
+<p>This is disabled by default</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.EnvoyListener">EnvoyListener
@@ -7641,6 +7729,21 @@ bool
 <em>(Optional)</em>
 <p>Use PROXY protocol for all listeners.</p>
 <p>Contour&rsquo;s default is false.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>compression</code>
+<br>
+<em>
+<a href="#projectcontour.io/v1alpha1.EnvoyCompression">
+EnvoyCompression
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Compression defines configuration related to compression in the default HTTP Listener filters.</p>
 </td>
 </tr>
 <tr>
@@ -8162,6 +8265,23 @@ string
 <p>DNSLookupFamily specifies DNS Resolution Policy to use for Envoy -&gt; Contour cluster name lookup.
 Allowed values are &ldquo;v4&rdquo;, &ldquo;v6&rdquo;, &ldquo;all&rdquo; or &ldquo;auto&rdquo;.
 defaults to &ldquo;auto&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td style="white-space:nowrap">
+<code>overloadMaxDownstreamConnections</code>
+<br>
+<em>
+uint64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OverloadMaxDownstreamConn defines the envoy global downstream connection limit controlled by the overload manager.
+When the value is greater than 0 the overload manager is enabled and listeners
+will begin rejecting connections when the the connection threshold is hit.
+Metrics and health listeners are not subject to the connection limits, however,
+they still count against the global limit.</p>
 </td>
 </tr>
 </tbody>
@@ -9038,6 +9158,26 @@ If configured to port &ldquo;0&rdquo; then the admin interface is disabled.</p>
 <p>Contour&rsquo;s default is 9001.</p>
 </td>
 </tr>
+<tr>
+<td style="white-space:nowrap">
+<code>stripTrailingHostDot</code>
+<br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EnvoyStripTrailingHostDot defines if trailing dot of the host should be removed from host/authority header
+before any processing of request by HTTP filters or routing. This
+affects the upstream host header. Without setting this option to true, incoming
+requests with host example.com. will not match against route with domains
+match set to example.com.</p>
+<p>See <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto?highlight=strip_trailing_host_dot">https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto?highlight=strip_trailing_host_dot</a>
+for more information.</p>
+<p>Contour&rsquo;s default is false.</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="projectcontour.io/v1alpha1.NetworkPublishing">NetworkPublishing
@@ -9785,8 +9925,8 @@ contour&rsquo;s default is 256.</p>
 <code>customTags</code>
 <br>
 <em>
-<a href="#projectcontour.io/v1alpha1.*github.com/projectcontour/contour/apis/projectcontour/v1alpha1.CustomTag">
-[]*github.com/projectcontour/contour/apis/projectcontour/v1alpha1.CustomTag
+<a href="#projectcontour.io/v1alpha1.CustomTag">
+[]CustomTag
 </a>
 </em>
 </td>
@@ -9839,25 +9979,6 @@ NamespacedName
 <tbody>
 <tr>
 <td style="white-space:nowrap">
-<code>type</code>
-<br>
-<em>
-<a href="#projectcontour.io/v1alpha1.XDSServerType">
-XDSServerType
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Defines the XDSServer to use for <code>contour serve</code>.</p>
-<p>Values: <code>envoy</code> (default), <code>contour (deprecated)</code>.</p>
-<p>Other values will produce an error.</p>
-<p>Deprecated: this field will be removed in a future release when
-the <code>contour</code> xDS server implementation is removed.</p>
-</td>
-</tr>
-<tr>
-<td style="white-space:nowrap">
 <code>address</code>
 <br>
 <em>
@@ -9901,30 +10022,6 @@ TLS
 </td>
 </tr>
 </tbody>
-</table>
-<h3 id="projectcontour.io/v1alpha1.XDSServerType">XDSServerType
-(<code>string</code> alias)</p></h3>
-<p>
-(<em>Appears on:</em>
-<a href="#projectcontour.io/v1alpha1.XDSServerConfig">XDSServerConfig</a>)
-</p>
-<p>
-<p>XDSServerType is the type of xDS server implementation.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody><tr><td><p>&#34;contour&#34;</p></td>
-<td><p>Use Contour&rsquo;s xDS server (deprecated).</p>
-</td>
-</tr><tr><td><p>&#34;envoy&#34;</p></td>
-<td><p>Use the upstream <code>go-control-plane</code>-based xDS server.</p>
-</td>
-</tr></tbody>
 </table>
 <hr/>
 <p><em>

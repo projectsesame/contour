@@ -177,7 +177,7 @@ func (p *GatewayAPIProcessor) Run(dag *DAG, source *KubernetesCache) {
 	}
 
 	for listenerName, attachedRoutes := range listenerAttachedRoutes {
-		gwAccessor.SetListenerAttachedRoutes(listenerName, attachedRoutes)
+		gwAccessor.SetListenerAttachedRoutes(listenerName, int32(attachedRoutes)) //nolint:gosec // disable G115
 	}
 
 	p.computeGatewayConditions(gwAccessor, gatewayNotProgrammedCondition)
@@ -414,7 +414,7 @@ func (l *listenerInfo) AllowsKind(kind gatewayapi_v1.Kind) bool {
 
 // isAddressAssigned returns true if either there are no addresses requested in specAddresses,
 // or if at least one address from specAddresses appears in statusAddresses.
-func isAddressAssigned(specAddresses []gatewayapi_v1.GatewayAddress, statusAddresses []gatewayapi_v1.GatewayStatusAddress) bool {
+func isAddressAssigned(specAddresses []gatewayapi_v1.GatewaySpecAddress, statusAddresses []gatewayapi_v1.GatewayStatusAddress) bool {
 	// 1. no addresses requested in specAddresses
 	// 2. at least one address in specAddresses but no address in statusAddresses at the moment.
 	if len(specAddresses) == 0 || len(statusAddresses) == 0 {
@@ -1038,7 +1038,7 @@ func (p *GatewayAPIProcessor) computeTLSRouteForListener(route *gatewayapi_v1alp
 			// Route defaults to a weight of "1" unless otherwise specified.
 			routeWeight := uint32(1)
 			if backendRef.Weight != nil {
-				routeWeight = uint32(*backendRef.Weight)
+				routeWeight = uint32(*backendRef.Weight) //nolint:gosec // disable G115
 			}
 
 			// Keep track of all the weights for this set of backendRefs. This will be
@@ -1303,7 +1303,7 @@ func (p *GatewayAPIProcessor) computeHTTPRouteForListener(
 
 				var portNumber uint32
 				if filter.RequestRedirect.Port != nil {
-					portNumber = uint32(*filter.RequestRedirect.Port)
+					portNumber = uint32(*filter.RequestRedirect.Port) //nolint:gosec // disable G115
 				}
 
 				var scheme string
@@ -1444,7 +1444,7 @@ func (p *GatewayAPIProcessor) computeHTTPRouteForListener(
 		// index of the rule to ensure rules that come first have a higher
 		// priority. All dag.Routes generated from a single HTTPRoute rule have
 		// the same priority.
-		priority := uint8(ruleIndex)
+		priority := uint8(ruleIndex) //nolint:gosec // disable G115
 
 		// Get our list of routes based on whether it's a redirect or a cluster-backed route.
 		// Note that we can end up with multiple routes here since the match conditions are
@@ -1636,7 +1636,7 @@ func (p *GatewayAPIProcessor) computeGRPCRouteForListener(route *gatewayapi_v1.G
 		// index of the rule to ensure rules that come first have a higher
 		// priority. All dag.Routes generated from a single GRPCRoute rule have
 		// the same priority.
-		priority := uint8(ruleIndex)
+		priority := uint8(ruleIndex) //nolint:gosec // disable G115
 
 		// Note that we can end up with multiple routes here since the match conditions are
 		// logically "OR"-ed, which we express as multiple routes, each with one of the
@@ -1731,10 +1731,10 @@ func gatewayGRPCHeaderMatchConditions(matches []gatewayapi_v1.GRPCHeaderMatch) (
 	for _, match := range matches {
 		// "Exact" and "RegularExpression" are the only supported match types. If match type is not specified, use "Exact" as default.
 		var matchType string
-		switch ptr.Deref(match.Type, gatewayapi_v1.HeaderMatchExact) {
-		case gatewayapi_v1.HeaderMatchExact:
+		switch ptr.Deref(match.Type, gatewayapi_v1.GRPCHeaderMatchExact) {
+		case gatewayapi_v1.GRPCHeaderMatchExact:
 			matchType = HeaderMatchTypeExact
-		case gatewayapi_v1.HeaderMatchRegularExpression:
+		case gatewayapi_v1.GRPCHeaderMatchRegularExpression:
 			if err := ValidateRegex(match.Value); err != nil {
 				return nil, fmt.Errorf("GRPCRoute.Spec.Rules.Matches.Headers: Invalid value for RegularExpression match type is specified")
 			}
@@ -1803,7 +1803,7 @@ func (p *GatewayAPIProcessor) computeTCPRouteForListener(route *gatewayapi_v1alp
 		// Route defaults to a weight of "1" unless otherwise specified.
 		routeWeight := uint32(1)
 		if backendRef.Weight != nil {
-			routeWeight = uint32(*backendRef.Weight)
+			routeWeight = uint32(*backendRef.Weight) //nolint:gosec // disable G115
 		}
 
 		// Keep track of all the weights for this set of backendRefs. This will be
@@ -1876,11 +1876,11 @@ func (p *GatewayAPIProcessor) validateBackendObjectRef(
 	routeKind string,
 	routeNamespace string,
 ) (*Service, *meta_v1.Condition) {
-	if !(backendObjectRef.Group == nil || *backendObjectRef.Group == "") {
+	if backendObjectRef.Group != nil && *backendObjectRef.Group != "" {
 		return nil, ptr.To(resolvedRefsFalse(gatewayapi_v1.RouteReasonInvalidKind, fmt.Sprintf("%s.Group must be \"\"", field)))
 	}
 
-	if !(backendObjectRef.Kind != nil && *backendObjectRef.Kind == "Service") {
+	if backendObjectRef.Kind == nil || *backendObjectRef.Kind != "Service" {
 		return nil, ptr.To(resolvedRefsFalse(gatewayapi_v1.RouteReasonInvalidKind, fmt.Sprintf("%s.Kind must be 'Service'", field)))
 	}
 
@@ -2137,7 +2137,7 @@ func (p *GatewayAPIProcessor) httpClusters(routeNamespace string, backendRefs []
 		// Route defaults to a weight of "1" unless otherwise specified.
 		routeWeight := uint32(1)
 		if backendRef.Weight != nil {
-			routeWeight = uint32(*backendRef.Weight)
+			routeWeight = uint32(*backendRef.Weight) //nolint:gosec // disable G115
 		}
 
 		// Keep track of all the weights for this set of backend refs. This will be
@@ -2336,7 +2336,7 @@ func (p *GatewayAPIProcessor) grpcClusters(routeNamespace string, backendRefs []
 		// Route defaults to a weight of "1" unless otherwise specified.
 		routeWeight := uint32(1)
 		if backendRef.Weight != nil {
-			routeWeight = uint32(*backendRef.Weight)
+			routeWeight = uint32(*backendRef.Weight) //nolint:gosec // disable G115
 		}
 
 		// Keep track of all the weights for this set of backend refs. This will be
@@ -2436,9 +2436,10 @@ func setDefaultServiceProtocol(service *Service, protocolType gatewayapi_v1.Prot
 	// For GRPCRoute, if the protocol is not set on the Service via annotation,
 	// we should assume a protocol that matches what listener the route was attached to
 	if isBlank(service.Protocol) {
-		if protocolType == gatewayapi_v1.HTTPProtocolType {
+		switch protocolType {
+		case gatewayapi_v1.HTTPProtocolType:
 			service.Protocol = "h2c"
-		} else if protocolType == gatewayapi_v1.HTTPSProtocolType {
+		case gatewayapi_v1.HTTPSProtocolType:
 			service.Protocol = "h2"
 		}
 	}

@@ -18,7 +18,6 @@ package e2e
 import (
 	"context"
 	"io"
-	"os"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -542,11 +541,7 @@ func (g *GRPC) Deploy(ns, name string) func() {
 // DefaultContourConfigFileParams returns a default configuration in a config
 // file params object.
 func DefaultContourConfigFileParams() *config.Parameters {
-	return &config.Parameters{
-		Server: config.ServerParameters{
-			XDSServerType: config.ServerType(XDSServerTypeFromEnv()),
-		},
-	}
+	return &config.Parameters{}
 }
 
 // DefaultContourConfiguration returns a default ContourConfiguration object.
@@ -558,7 +553,6 @@ func DefaultContourConfiguration() *contour_v1alpha1.ContourConfiguration {
 		},
 		Spec: contour_v1alpha1.ContourConfigurationSpec{
 			XDSServer: &contour_v1alpha1.XDSServerConfig{
-				Type:    XDSServerTypeFromEnv(),
 				Address: listenAllAddress(),
 				Port:    8001,
 				TLS: &contour_v1alpha1.TLS{
@@ -639,22 +633,8 @@ func DefaultContourConfiguration() *contour_v1alpha1.ContourConfiguration {
 	}
 }
 
-func XDSServerTypeFromEnv() contour_v1alpha1.XDSServerType {
-	// Default to envoy if not provided.
-	serverType := contour_v1alpha1.EnvoyServerType
-	typeFromEnv, found := os.LookupEnv("CONTOUR_E2E_XDS_SERVER_TYPE")
-	if found {
-		serverType = contour_v1alpha1.XDSServerType(typeFromEnv)
-	}
-	return serverType
-}
-
 func UseFeatureFlagsFromEnv() []string {
 	flags := make([]string, 0)
-	_, found := os.LookupEnv("CONTOUR_E2E_USE_ENDPOINTS")
-	if found {
-		flags = append(flags, "useEndpointSlices=false")
-	}
 	return flags
 }
 

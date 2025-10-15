@@ -108,7 +108,7 @@ func checkDaemonSetHasLabels(t *testing.T, ds *apps_v1.DaemonSet, expected map[s
 func checkDaemonSetHasPodAnnotations(t *testing.T, ds *apps_v1.DaemonSet, expected map[string]string) {
 	t.Helper()
 
-	if apiequality.Semantic.DeepEqual(ds.Spec.Template.ObjectMeta.Annotations, expected) {
+	if apiequality.Semantic.DeepEqual(ds.Spec.Template.Annotations, expected) {
 		return
 	}
 
@@ -179,7 +179,7 @@ func checkDaemonSetHasVolume(t *testing.T, ds *apps_v1.DaemonSet, vol core_v1.Vo
 		}
 	}
 
-	if !(hasVol && hasVolMount) {
+	if !hasVol || !hasVolMount {
 		t.Errorf("daemonset has not found volume or volumeMount")
 	}
 }
@@ -314,6 +314,7 @@ func TestDesiredDaemonSet(t *testing.T) {
 	testLogLevelArg := "--log-level debug"
 	testBaseIDArg := "--base-id 1"
 	testEnvoyMaxHeapSize := "--overload-max-heap=8000000000"
+	testEnvoyMaxDownstreamConn := "--overload-downstream-max-conn=42"
 	testEnvoyDNSLookupFamily := "--dns-lookup-family=v6"
 
 	resQutoa := core_v1.ResourceRequirements{
@@ -341,6 +342,7 @@ func TestDesiredDaemonSet(t *testing.T) {
 	cntr.Spec.EnvoyBaseID = 1
 
 	cntr.Spec.EnvoyMaxHeapSizeBytes = 8000000000
+	cntr.Spec.EnvoyMaxDownstreamConnections = 42
 	cntr.Spec.EnvoyDNSLookupFamily = "v6"
 
 	ds := DesiredDaemonSet(cntr, testContourImage, testEnvoyImage)
@@ -359,13 +361,14 @@ func TestDesiredDaemonSet(t *testing.T) {
 
 	checkContainerHasImage(t, container, testContourImage)
 	checkContainerHasArg(t, container, testEnvoyMaxHeapSize)
+	checkContainerHasArg(t, container, testEnvoyMaxDownstreamConn)
 	checkContainerHasArg(t, container, testEnvoyDNSLookupFamily)
 
 	checkDaemonSetHasEnvVar(t, ds, EnvoyContainerName, envoyNsEnvVar)
 	checkDaemonSetHasEnvVar(t, ds, EnvoyContainerName, envoyPodEnvVar)
 	checkDaemonSetHasEnvVar(t, ds, envoyInitContainerName, envoyNsEnvVar)
 	checkDaemonSetHasLabels(t, ds, cntr.WorkloadLabels())
-	checkContainerHasPort(t, ds, int32(cntr.Spec.RuntimeSettings.Envoy.Metrics.Port))
+	checkContainerHasPort(t, ds, int32(cntr.Spec.RuntimeSettings.Envoy.Metrics.Port)) //nolint:gosec // disable G115
 
 	checkDaemonSetHasNodeSelector(t, ds, nil)
 	checkDaemonSetHasTolerations(t, ds, nil)

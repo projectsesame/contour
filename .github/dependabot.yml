@@ -13,8 +13,6 @@ updates:
   labels:
   - area/dependency
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     k8s-dependencies:
       patterns:
@@ -28,8 +26,6 @@ updates:
   labels:
   - area/tooling
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     artifact-actions:
       patterns:
@@ -37,7 +33,7 @@ updates:
       - "actions/download-artifact"
 
 # release branch N targets
-- target-branch: release-1.30
+- target-branch: release-1.33
   package-ecosystem: "gomod"
   directory: "/"
   schedule:
@@ -51,13 +47,11 @@ updates:
   labels:
   - area/dependency
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     k8s-dependencies:
       patterns:
       - "k8s.io/*"
-- target-branch: release-1.30
+- target-branch: release-1.33
   package-ecosystem: "github-actions"
   directory: "/"
   schedule:
@@ -71,8 +65,6 @@ updates:
   labels:
   - area/tooling
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     artifact-actions:
       patterns:
@@ -80,7 +72,7 @@ updates:
       - "actions/download-artifact"
 
 # release branch N-1 targets
-- target-branch: release-1.29
+- target-branch: release-1.32
   package-ecosystem: "gomod"
   directory: "/"
   schedule:
@@ -94,13 +86,11 @@ updates:
   labels:
   - area/dependency
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     k8s-dependencies:
       patterns:
       - "k8s.io/*"
-- target-branch: release-1.29
+- target-branch: release-1.32
   package-ecosystem: "github-actions"
   directory: "/"
   schedule:
@@ -114,8 +104,6 @@ updates:
   labels:
   - area/tooling
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     artifact-actions:
       patterns:
@@ -123,7 +111,7 @@ updates:
       - "actions/download-artifact"
 
 # release branch N-2 targets
-- target-branch: release-1.28
+- target-branch: release-1.31
   package-ecosystem: "gomod"
   directory: "/"
   schedule:
@@ -137,13 +125,11 @@ updates:
   labels:
   - area/dependency
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     k8s-dependencies:
       patterns:
       - "k8s.io/*"
-- target-branch: release-1.28
+- target-branch: release-1.31
   package-ecosystem: "github-actions"
   directory: "/"
   schedule:
@@ -157,8 +143,6 @@ updates:
   labels:
   - area/tooling
   - release-note/none-required
-  reviewers:
-  - projectcontour/maintainers
   groups:
     artifact-actions:
       patterns:

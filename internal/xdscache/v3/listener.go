@@ -27,7 +27,6 @@ import (
 
 	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	contour_v1alpha1 "github.com/projectcontour/contour/apis/projectcontour/v1alpha1"
-	"github.com/projectcontour/contour/internal/contour"
 	"github.com/projectcontour/contour/internal/contourconfig"
 	"github.com/projectcontour/contour/internal/dag"
 	envoy_v3 "github.com/projectcontour/contour/internal/envoy/v3"
@@ -66,6 +65,9 @@ type ListenerConfig struct {
 	// V1 or V2 preamble.
 	// If not set, defaults to false.
 	UseProxyProto bool
+
+	// Compression defines configuration related to compression in the default HTTP Listener filters.
+	Compression *contour_v1alpha1.EnvoyCompression
 
 	// MinimumTLSVersion defines the minimum TLS protocol version the proxy should accept.
 	MinimumTLSVersion string
@@ -120,6 +122,10 @@ type ListenerConfig struct {
 	// XffNumTrustedHops sets the number of additional ingress proxy hops from the
 	// right side of the x-forwarded-for HTTP header to trust.
 	XffNumTrustedHops uint32
+
+	// StripTrailingHostDot sets  if trailing dot of the host should be removed from host/authority header before any
+	// processing of request by HTTP filters or routing.
+	StripTrailingHostDot bool
 
 	// ConnectionBalancer
 	// The validated value is 'exact'.
@@ -295,8 +301,8 @@ type ListenerCache struct {
 	values       map[string]*envoy_config_listener_v3.Listener
 	staticValues map[string]*envoy_config_listener_v3.Listener
 
-	Config ListenerConfig
-	contour.Cond
+	envoyGen *envoy_v3.EnvoyGen
+	Config   ListenerConfig
 }
 
 // NewListenerCache returns an instance of a ListenerCache
@@ -304,14 +310,17 @@ func NewListenerCache(
 	listenerConfig ListenerConfig,
 	metricsConfig contour_v1alpha1.MetricsConfig,
 	healthConfig contour_v1alpha1.HealthConfig,
+	omEnforcedHealthConfig *contour_v1alpha1.HealthConfig,
 	adminPort int,
+	envoyGen *envoy_v3.EnvoyGen,
 ) *ListenerCache {
 	listenerCache := &ListenerCache{
 		Config:       listenerConfig,
 		staticValues: map[string]*envoy_config_listener_v3.Listener{},
+		envoyGen:     envoyGen,
 	}
 
-	for _, l := range envoy_v3.StatsListeners(metricsConfig, healthConfig) {
+	for _, l := range envoyGen.StatsListeners(metricsConfig, healthConfig, omEnforcedHealthConfig) {
 		listenerCache.staticValues[l.Name] = l
 	}
 
@@ -331,7 +340,6 @@ func (c *ListenerCache) Update(v map[string]*envoy_config_listener_v3.Listener) 
 	defer c.mu.Unlock()
 
 	c.values = v
-	c.Cond.Notify()
 }
 
 // Contents returns a copy of the cache's contents.
@@ -343,31 +351,6 @@ func (c *ListenerCache) Contents() []proto.Message {
 		values = append(values, v)
 	}
 	for _, v := range c.staticValues {
-		values = append(values, v)
-	}
-	sort.Stable(sorter.For(values))
-	return protobuf.AsMessages(values)
-}
-
-// Query returns the proto.Messages in the ListenerCache that match
-// a slice of strings
-func (c *ListenerCache) Query(names []string) []proto.Message {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	var values []*envoy_config_listener_v3.Listener
-	for _, n := range names {
-		v, ok := c.values[n]
-		if !ok {
-			v, ok = c.staticValues[n]
-			if !ok {
-				// if the listener is not registered in
-				// dynamic or static values then skip it
-				// as there is no way to return a blank
-				// listener because the listener address
-				// field is required.
-				continue
-			}
-		}
 		values = append(values, v)
 	}
 	sort.Stable(sorter.For(values))
@@ -406,7 +389,8 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 		// Note: Ensure the filter chain order matches with the filter chain
 		// order for the HTTPS virtualhosts.
 		if len(listener.VirtualHosts) > 0 {
-			cm := envoy_v3.HTTPConnectionManagerBuilder().
+			cm := c.envoyGen.HTTPConnectionManagerBuilder().
+				Compression(cfg.Compression).
 				Codec(envoy_v3.CodecForVersions(cfg.DefaultHTTPVersions...)).
 				DefaultFilters().
 				RouteConfigName(httpRouteConfigName(listener)).
@@ -422,6 +406,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 				MergeSlashes(cfg.MergeSlashes).
 				ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 				NumTrustedHops(cfg.XffNumTrustedHops).
+				StripTrailingHostDot(cfg.StripTrailingHostDot).
 				MaxRequestsPerConnection(cfg.MaxRequestsPerConnection).
 				HTTP2MaxConcurrentStreams(cfg.HTTP2MaxConcurrentStreams).
 				AddFilter(httpGlobalExternalAuthConfig(cfg.GlobalExternalAuthConfig)).
@@ -479,7 +464,8 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 				// metrics prefix to keep compatibility with previous
 				// Contour versions since the metrics prefix will be
 				// coded into monitoring dashboards.
-				cm := envoy_v3.HTTPConnectionManagerBuilder().
+				cm := c.envoyGen.HTTPConnectionManagerBuilder().
+					Compression(cfg.Compression).
 					Codec(envoy_v3.CodecForVersions(cfg.DefaultHTTPVersions...)).
 					AddFilter(envoy_v3.FilterMisdirectedRequests(vh.VirtualHost.Name)).
 					DefaultFilters().
@@ -498,6 +484,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					MergeSlashes(cfg.MergeSlashes).
 					ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 					NumTrustedHops(cfg.XffNumTrustedHops).
+					StripTrailingHostDot(cfg.StripTrailingHostDot).
 					Tracing(envoy_v3.TracingConfig(envoyTracingConfig(cfg.TracingConfig))).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
 					ForwardClientCertificate(forwardClientCertificate).
@@ -531,7 +518,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					maxVer = cfg.maxTLSVersion()
 				}
 
-				downstreamTLS = envoy_v3.DownstreamTLSContext(
+				downstreamTLS = c.envoyGen.DownstreamTLSContext(
 					vh.Secret,
 					minVer,
 					maxVer,
@@ -540,7 +527,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					alpnProtos...)
 			}
 
-			listeners[listener.Name].FilterChains = append(listeners[listener.Name].FilterChains, envoy_v3.FilterChainTLS(vh.VirtualHost.Name, downstreamTLS, filters))
+			listeners[listener.Name].FilterChains = append(listeners[listener.Name].FilterChains, envoy_v3.FilterChainTLS(vh.Name, downstreamTLS, filters))
 
 			// If this VirtualHost has enabled the fallback certificate then set a default
 			// FilterChain which will allow routes with this vhost to accept non-SNI TLS requests.
@@ -550,7 +537,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 			if vh.FallbackCertificate != nil && !envoy_v3.ContainsFallbackFilterChain(listeners[listener.Name].FilterChains) {
 				// Construct the downstreamTLSContext passing the configured fallbackCertificate. The TLS min/max ProtocolVersion will use
 				// the value defined in the Contour Configuration file if defined.
-				downstreamTLS = envoy_v3.DownstreamTLSContext(
+				downstreamTLS = c.envoyGen.DownstreamTLSContext(
 					vh.FallbackCertificate,
 					cfg.minTLSVersion(),
 					cfg.maxTLSVersion(),
@@ -564,7 +551,8 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					authzFilter = envoy_v3.FilterExternalAuthz(vh.ExternalAuthorization)
 				}
 
-				cm := envoy_v3.HTTPConnectionManagerBuilder().
+				cm := c.envoyGen.HTTPConnectionManagerBuilder().
+					Compression(cfg.Compression).
 					DefaultFilters().
 					AddFilter(authzFilter).
 					RouteConfigName(fallbackCertRouteConfigName(listener)).
@@ -580,6 +568,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 					MergeSlashes(cfg.MergeSlashes).
 					ServerHeaderTransformation(cfg.ServerHeaderTransformation).
 					NumTrustedHops(cfg.XffNumTrustedHops).
+					StripTrailingHostDot(cfg.StripTrailingHostDot).
 					Tracing(envoy_v3.TracingConfig(envoyTracingConfig(cfg.TracingConfig))).
 					AddFilter(envoy_v3.GlobalRateLimitFilter(envoyGlobalRateLimitConfig(cfg.RateLimitConfig))).
 					ForwardClientCertificate(forwardClientCertificate).
@@ -629,11 +618,11 @@ func httpGlobalExternalAuthConfig(config *GlobalExternalAuthConfig) *envoy_filte
 
 	return envoy_v3.FilterExternalAuthz(&dag.ExternalAuthorization{
 		AuthorizationService: &dag.ExtensionCluster{
-			Name: dag.ExtensionClusterName(config.ExtensionServiceConfig.ExtensionService),
-			SNI:  config.ExtensionServiceConfig.SNI,
+			Name: dag.ExtensionClusterName(config.ExtensionService),
+			SNI:  config.SNI,
 		},
 		AuthorizationFailOpen:              config.FailOpen,
-		AuthorizationResponseTimeout:       config.ExtensionServiceConfig.Timeout,
+		AuthorizationResponseTimeout:       config.Timeout,
 		AuthorizationServerWithRequestBody: config.WithRequestBody,
 	})
 }
@@ -645,11 +634,11 @@ func toExtProc(p *GlobalExtProcConfig) *dag.ExtProc {
 
 	return &dag.ExtProc{
 		ExtProcService: &dag.ExtensionCluster{
-			Name: dag.ExtensionClusterName(p.ExtensionServiceConfig.ExtensionService),
-			SNI:  p.ExtensionServiceConfig.SNI,
+			Name: dag.ExtensionClusterName(p.ExtensionService),
+			SNI:  p.SNI,
 		},
 		FailOpen:          p.FailOpen,
-		ResponseTimeout:   p.ExtensionServiceConfig.Timeout,
+		ResponseTimeout:   p.Timeout,
 		ProcessingMode:    p.ProcessingMode,
 		MutationRules:     p.MutationRules,
 		AllowModeOverride: p.AllowModeOverride,
@@ -662,10 +651,10 @@ func envoyGlobalRateLimitConfig(config *RateLimitConfig) *envoy_v3.GlobalRateLim
 	}
 
 	return &envoy_v3.GlobalRateLimitConfig{
-		ExtensionService:            config.ExtensionServiceConfig.ExtensionService,
-		SNI:                         config.ExtensionServiceConfig.SNI,
+		ExtensionService:            config.ExtensionService,
+		SNI:                         config.SNI,
 		FailOpen:                    config.FailOpen,
-		Timeout:                     config.ExtensionServiceConfig.Timeout,
+		Timeout:                     config.Timeout,
 		Domain:                      config.Domain,
 		EnableXRateLimitHeaders:     config.EnableXRateLimitHeaders,
 		EnableResourceExhaustedCode: config.EnableResourceExhaustedCode,
@@ -678,10 +667,10 @@ func envoyTracingConfig(config *TracingConfig) *envoy_v3.EnvoyTracingConfig {
 	}
 
 	return &envoy_v3.EnvoyTracingConfig{
-		ExtensionService: config.ExtensionServiceConfig.ExtensionService,
+		ExtensionService: config.ExtensionService,
 		ServiceName:      config.ServiceName,
-		SNI:              config.ExtensionServiceConfig.SNI,
-		Timeout:          config.ExtensionServiceConfig.Timeout,
+		SNI:              config.SNI,
+		Timeout:          config.Timeout,
 		OverallSampling:  config.OverallSampling,
 		MaxPathTagLength: config.MaxPathTagLength,
 		CustomTags:       envoyTracingConfigCustomTag(config.CustomTags),

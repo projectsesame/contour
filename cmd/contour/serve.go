@@ -123,6 +123,7 @@ func registerServe(app *kingpin.Application) (*kingpin.CmdClause, *serveContext)
 
 		return nil
 	}
+
 	serve.Flag("accesslog-format", "Format for Envoy access logs.").PlaceHolder("<envoy|json>").StringVar((*string)(&ctx.Config.AccessLogFormat))
 
 	serve.Flag("config-path", "Path to base configuration.").Short('c').PlaceHolder("/path/to/file").Action(parseConfig).ExistingFileVar(&configFile)
@@ -189,12 +190,6 @@ type Server struct {
 	mgr               manager.Manager
 	registry          *prometheus.Registry
 	handlerCacheSyncs []cache.InformerSynced
-}
-
-type EndpointsTranslator interface {
-	cache.ResourceEventHandler
-	xdscache.ResourceCache
-	SetObserver(observer contour.Observer)
 }
 
 // NewServer returns a Server object which contains the initial configuration
@@ -447,6 +442,7 @@ func (s *Server) doServe() error {
 	}
 
 	listenerConfig := xdscache_v3.ListenerConfig{
+		Compression:                   contourConfiguration.Envoy.Listener.Compression,
 		UseProxyProto:                 *contourConfiguration.Envoy.Listener.UseProxyProto,
 		HTTPAccessLog:                 contourConfiguration.Envoy.HTTPListener.AccessLog,
 		HTTPSAccessLog:                contourConfiguration.Envoy.HTTPSListener.AccessLog,
@@ -464,6 +460,7 @@ func (s *Server) doServe() error {
 		MergeSlashes:                  !*contourConfiguration.Envoy.Listener.DisableMergeSlashes,
 		ServerHeaderTransformation:    contourConfiguration.Envoy.Listener.ServerHeaderTransformation,
 		XffNumTrustedHops:             *contourConfiguration.Envoy.Network.XffNumTrustedHops,
+		StripTrailingHostDot:          *contourConfiguration.Envoy.Network.EnvoyStripTrailingHostDot,
 		ConnectionBalancer:            contourConfiguration.Envoy.Listener.ConnectionBalancer,
 		MaxRequestsPerConnection:      contourConfiguration.Envoy.Listener.MaxRequestsPerConnection,
 		HTTP2MaxConcurrentStreams:     contourConfiguration.Envoy.Listener.HTTP2MaxConcurrentStreams,
@@ -489,19 +486,18 @@ func (s *Server) doServe() error {
 
 	contourMetrics := metrics.NewMetrics(s.registry)
 
-	// Endpoints updates are handled directly by the EndpointsTranslator/EndpointSliceTranslator due to the high update volume.
-	var endpointHandler EndpointsTranslator
-	if contourConfiguration.FeatureFlags.IsEndpointSliceEnabled() {
-		endpointHandler = xdscache_v3.NewEndpointSliceTranslator(s.log.WithField("context", "endpointslicetranslator"))
-	} else {
-		endpointHandler = xdscache_v3.NewEndpointsTranslator(s.log.WithField("context", "endpointstranslator"))
-	}
+	// Endpoints updates are handled directly by the EndpointSliceTranslator due to the high update volume.
+	endpointHandler := xdscache_v3.NewEndpointSliceTranslator(s.log.WithField("context", "endpointslicetranslator"))
+
+	envoyGen := envoy_v3.NewEnvoyGen(envoy_v3.EnvoyGenOpt{
+		XDSClusterName: envoy_v3.DefaultXDSClusterName,
+	})
 
 	resources := []xdscache.ResourceCache{
-		xdscache_v3.NewListenerCache(listenerConfig, *contourConfiguration.Envoy.Metrics, *contourConfiguration.Envoy.Health, *contourConfiguration.Envoy.Network.EnvoyAdminPort),
+		xdscache_v3.NewListenerCache(listenerConfig, *contourConfiguration.Envoy.Metrics, *contourConfiguration.Envoy.Health, contourConfiguration.Envoy.OMEnforcedHealth, *contourConfiguration.Envoy.Network.EnvoyAdminPort, envoyGen),
 		xdscache_v3.NewSecretsCache(envoy_v3.StatsSecrets(contourConfiguration.Envoy.Metrics.TLS)),
 		&xdscache_v3.RouteCache{},
-		&xdscache_v3.ClusterCache{},
+		xdscache_v3.NewClusterCache(envoyGen),
 		endpointHandler,
 		xdscache_v3.NewRuntimeCache(xdscache_v3.ConfigurableRuntimeSettings{
 			MaxRequestsPerIOCycle:     contourConfiguration.Envoy.Listener.MaxRequestsPerIOCycle,
@@ -511,15 +507,10 @@ func (s *Server) doServe() error {
 
 	// snapshotHandler triggers go-control-plane Snapshots based on
 	// the contents of the Contour xDS caches after the DAG is built.
-	var snapshotHandler *xdscache_v3.SnapshotHandler
+	snapshotHandler := xdscache_v3.NewSnapshotHandler(resources, s.log.WithField("context", "snapshotHandler"))
 
-	// nolint:staticcheck
-	if contourConfiguration.XDSServer.Type == contour_v1alpha1.EnvoyServerType {
-		snapshotHandler = xdscache_v3.NewSnapshotHandler(resources, s.log.WithField("context", "snapshotHandler"))
-
-		// register observer for endpoints updates.
-		endpointHandler.SetObserver(contour.ComposeObservers(snapshotHandler))
-	}
+	// register observer for endpoints updates.
+	endpointHandler.SetObserver(contour.ComposeObservers(snapshotHandler))
 
 	// Log that we're using the fallback certificate if configured.
 	if contourConfiguration.HTTPProxy.FallbackCertificate != nil {
@@ -660,21 +651,12 @@ func (s *Server) doServe() error {
 		s.log.WithError(err).WithField("resource", "secrets").Fatal("failed to create informer")
 	}
 
-	// Inform on endpoints/endpointSlices.
-	if contourConfiguration.FeatureFlags.IsEndpointSliceEnabled() {
-		if err := s.informOnResource(&discovery_v1.EndpointSlice{}, &contour.EventRecorder{
-			Next:    endpointHandler,
-			Counter: contourMetrics.EventHandlerOperations,
-		}); err != nil {
-			s.log.WithError(err).WithField("resource", "endpointslices").Fatal("failed to create informer")
-		}
-	} else {
-		if err := s.informOnResource(&core_v1.Endpoints{}, &contour.EventRecorder{
-			Next:    endpointHandler,
-			Counter: contourMetrics.EventHandlerOperations,
-		}); err != nil {
-			s.log.WithError(err).WithField("resource", "endpoints").Fatal("failed to create informer")
-		}
+	// Inform on endpointSlices.
+	if err := s.informOnResource(&discovery_v1.EndpointSlice{}, &contour.EventRecorder{
+		Next:    endpointHandler,
+		Counter: contourMetrics.EventHandlerOperations,
+	}); err != nil {
+		s.log.WithError(err).WithField("resource", "endpointslices").Fatal("failed to create informer")
 	}
 
 	// Register our event handler with the manager.
@@ -705,34 +687,12 @@ func (s *Server) doServe() error {
 		ingressClassNames: ingressClassNames,
 		gatewayRef:        gatewayRef,
 		statusUpdater:     sh.Writer(),
+		statusAddress:     contourConfiguration.Ingress.StatusAddress,
+		serviceName:       contourConfiguration.Envoy.Service.Name,
+		serviceNamespace:  contourConfiguration.Envoy.Service.Namespace,
 	}
 	if err := s.mgr.Add(lbsw); err != nil {
 		return err
-	}
-
-	// Register an informer to watch envoy's service if we haven't been given static details.
-	if lbAddress := contourConfiguration.Ingress.StatusAddress; len(lbAddress) > 0 {
-		s.log.WithField("loadbalancer-address", lbAddress).Info("Using supplied information for Ingress status")
-		lbsw.lbStatus <- parseStatusFlag(lbAddress)
-	} else {
-		serviceHandler := &k8s.ServiceStatusLoadBalancerWatcher{
-			ServiceName: contourConfiguration.Envoy.Service.Name,
-			LBStatus:    lbsw.lbStatus,
-			Log:         s.log.WithField("context", "serviceStatusLoadBalancerWatcher"),
-		}
-
-		var handler cache.ResourceEventHandler = serviceHandler
-		if contourConfiguration.Envoy.Service.Namespace != "" {
-			handler = k8s.NewNamespaceFilter([]string{contourConfiguration.Envoy.Service.Namespace}, handler)
-		}
-
-		if err := s.informOnResource(&core_v1.Service{}, handler); err != nil {
-			s.log.WithError(err).WithField("resource", "services").Fatal("failed to create informer")
-		}
-
-		s.log.WithField("envoy-service-name", contourConfiguration.Envoy.Service.Name).
-			WithField("envoy-service-namespace", contourConfiguration.Envoy.Service.Namespace).
-			Info("Watching Service for Ingress status")
 	}
 
 	xdsServer := &xdsServer{
@@ -950,18 +910,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 	log.Info("the initial dag is built")
 
 	grpcServer := xds.NewServer(x.registry, grpcOptions(log, x.config.TLS)...)
-
-	// nolint:staticcheck
-	switch x.config.Type {
-	case contour_v1alpha1.EnvoyServerType:
-		contour_xds_v3.RegisterServer(envoy_server_v3.NewServer(ctx, x.snapshotHandler.GetCache(), contour_xds_v3.NewRequestLoggingCallbacks(log)), grpcServer)
-	case contour_v1alpha1.ContourServerType:
-		contour_xds_v3.RegisterServer(contour_xds_v3.NewContourServer(log, xdscache.ResourcesOf(x.resources)...), grpcServer)
-	default:
-		// This can't happen due to config validation.
-		// nolint:staticcheck
-		log.Fatalf("invalid xDS server type %q", x.config.Type)
-	}
+	contour_xds_v3.RegisterServer(envoy_server_v3.NewServer(ctx, x.snapshotHandler.GetCache(), contour_xds_v3.NewRequestLoggingCallbacks(log)), grpcServer)
 
 	addr := net.JoinHostPort(x.config.Address, strconv.Itoa(x.config.Port))
 	l, err := net.Listen("tcp", addr)
@@ -974,8 +923,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 		log = log.WithField("insecure", true)
 	}
 
-	// nolint:staticcheck
-	log.Infof("started xDS server type: %q", x.config.Type)
+	log.Info("started xDS server")
 	defer log.Info("stopped xDS server")
 
 	go func() {
@@ -1003,7 +951,7 @@ func (s *Server) setupMetrics(metricsConfig contour_v1alpha1.MetricsConfig, heal
 		ServeMux:    http.ServeMux{},
 	}
 
-	metricsvc.ServeMux.Handle("/metrics", metrics.Handler(registry))
+	metricsvc.Handle("/metrics", metrics.Handler(registry))
 
 	if metricsConfig.TLS != nil {
 		metricsvc.Cert = metricsConfig.TLS.CertFile
@@ -1013,8 +961,8 @@ func (s *Server) setupMetrics(metricsConfig contour_v1alpha1.MetricsConfig, heal
 
 	if healthConfig.Address == metricsConfig.Address && healthConfig.Port == metricsConfig.Port {
 		h := health.Handler(s.coreClient)
-		metricsvc.ServeMux.Handle("/health", h)
-		metricsvc.ServeMux.Handle("/healthz", h)
+		metricsvc.Handle("/health", h)
+		metricsvc.Handle("/healthz", h)
 	}
 
 	return s.mgr.Add(metricsvc)
@@ -1031,8 +979,8 @@ func (s *Server) setupHealth(healthConfig contour_v1alpha1.HealthConfig,
 		}
 
 		h := health.Handler(s.coreClient)
-		healthsvc.ServeMux.Handle("/health", h)
-		healthsvc.ServeMux.Handle("/healthz", h)
+		healthsvc.Handle("/health", h)
+		healthsvc.Handle("/healthz", h)
 
 		return s.mgr.Add(healthsvc)
 	}
