@@ -1249,7 +1249,8 @@ func toExtProcOverrides(
 		validCond,
 		defaultNamespace,
 		contour_v1.ConditionTypeExtProcError,
-		extClusterGetter)
+		extClusterGetter,
+	)
 	if !ok {
 		return nil
 	}
@@ -1257,7 +1258,8 @@ func toExtProcOverrides(
 		contour_v1.ConditionTypeExtProcError,
 		override.ResponseTimeout,
 		validCond,
-		extSvc)
+		extSvc,
+	)
 	if !ok {
 		return nil
 	}
@@ -1538,7 +1540,8 @@ func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(
 		validCond,
 		httpproxy.Namespace,
 		contour_v1.ConditionTypeAuthError,
-		p.dag.GetExtensionCluster)
+		p.dag.GetExtensionCluster,
+	)
 	if !ok {
 		return nil
 	}
@@ -1656,7 +1659,8 @@ func (p *HTTPProxyProcessor) computeVirtualHostExtProc(
 		validCond,
 		httpproxy.Namespace,
 		contour_v1.ConditionTypeExtProcError,
-		p.dag.GetExtensionCluster)
+		p.dag.GetExtensionCluster,
+	)
 	if !ok {
 		return nil
 	}
@@ -1769,6 +1773,7 @@ func (p *HTTPProxyProcessor) computeSecureVirtualHostExtProc(
 	}
 	return true
 }
+
 func (p *HTTPProxyProcessor) computeSecureVirtualHostAuthorization(validCond *contour_v1.DetailedCondition, httpproxy *contour_v1.HTTPProxy, svhost *SecureVirtualHost) bool {
 	if httpproxy.Spec.VirtualHost.AuthorizationConfigured() && !httpproxy.Spec.VirtualHost.DisableAuthorization() && httpproxy.Spec.VirtualHost.Authorization.ExtensionServiceRef.IsConfigured() {
 		authorization := p.computeVirtualHostAuthorization(httpproxy.Spec.VirtualHost.Authorization, validCond, httpproxy)

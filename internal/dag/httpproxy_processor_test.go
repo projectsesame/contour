@@ -873,6 +873,7 @@ func TestDetermineExternalAuthTimeout(t *testing.T) {
 		})
 	}
 }
+
 func TestToIPFilterRule(t *testing.T) {
 	tests := map[string]struct {
 		allowPolicy       []contour_v1.IPFilterPolicy
