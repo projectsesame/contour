@@ -335,6 +335,8 @@ func escapeHeaderValue(value string, dynamicHeaders map[string]string) string {
 		"UPSTREAM_REMOTE_ADDRESS",
 		"RESPONSE_FLAGS",
 		"RESPONSE_CODE_DETAILS",
+		"TLS_JA3_FINGERPRINT",
+		"TLS_JA4_FINGERPRINT",
 	} {
 		escapedValue = strings.ReplaceAll(escapedValue, "%%"+envoyVar+"%%", "%"+envoyVar+"%")
 	}
@@ -363,18 +365,10 @@ func cookieRewritePolicies(policies []contour_v1.CookieRewritePolicy) ([]CookieR
 			policiesSet++
 			domain = ptr.To(p.DomainRewrite.Value)
 		}
-		// We use a uint here since a pointer to bool cannot be
-		// distingiuished when unset or false in golang text templates.
-		// 0 means unset.
-		secure := uint(0)
+		var secure *bool
 		if p.Secure != nil {
 			policiesSet++
-			// Increment to indicate it has been set.
-			secure++
-			if *p.Secure {
-				// Increment to indicate it is true.
-				secure++
-			}
+			secure = p.Secure
 		}
 		if p.SameSite != nil {
 			policiesSet++

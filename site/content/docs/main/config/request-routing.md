@@ -126,12 +126,46 @@ Modifiers:
 - `ignoreCase`: IgnoreCase specifies that string matching should be case insensitive. It has no effect on the `Regex` parameter.
 - `treatMissingAsEmpty`: specifies if the header match rule specified header does not exist, this header value will be treated as empty. Defaults to false. Unlike the underlying Envoy implementation this is **only** supported for negative matches (e.g. NotContains, NotExact).
 
+#### Method Matching
+
+HTTPProxy currently does not provide a dedicated field for matching HTTP methods. However, you can achieve method-based routing using **header conditions** with the HTTP/2 pseudo-header formatted`:method` header match. This allows routing requests based on HTTP methods such as `GET`, `POST`, `PUT`, etc.
+
+```yaml
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: method-matching
+  namespace: default
+spec:
+  virtualhost:
+    fqdn: methods.example.com
+  routes:
+    - conditions:
+        - header:
+            name: ":method"
+            exact: GET
+      services:
+        - name: get-service
+          port: 80
+    - conditions:
+        - header:
+            name: ":method"
+            exact: POST
+      services:
+        - name: post-service
+          port: 80
+```
+
 #### Query parameter conditions
 
 Similar to the `header` conditions, `queryParameter` conditions also require the
 `name` field to be specified, which represents the name of the query parameter
 e.g. `search` when the query string looks like `/?search=term` and `term`
 representing the value.
+
+The `name` field is matched **case-sensitively** against the query string —
+`Search` and `search` are different parameters. The `ignoreCase` modifier
+described below applies only to the *value* of the parameter, not its name.
 
 There are six operator fields: `exact`, `prefix`, `suffix`, `regex`, `contains`
 and `present` and a modifier `ignoreCase` which can be used together with all of
@@ -157,6 +191,31 @@ the operator fields except `regex` and `present`.
 
 - `ignoreCase` is a boolean, and if set to `true` it will enable case
   insensitive matching for any of the string operator matching methods.
+
+#### Match Condition Precedence
+
+Envoy matches requests against routes in the order it receives them. When a
+single virtualhost has multiple routes whose match conditions could overlap,
+Contour sorts the routes by **specificity** before sending them to Envoy, so
+the most specific match wins regardless of the order they appear in the
+HTTPProxy spec.
+
+The sort order is:
+
+1. **Path matches**, most specific first:
+   1. **Exact** matches.
+   2. **Regex** matches, ordered by expression length (longer regexes first,
+      as a proxy for specificity).
+   3. **Prefix** matches, ordered by prefix length (longer prefixes first).
+2. **Header conditions** — routes with more header conditions win over
+   routes with fewer.
+3. **Query parameter conditions** — routes with more query parameter
+   conditions win over routes with fewer.
+
+This is intentionally similar to Gateway API's [HTTPRouteRule precedence
+spec](https://gateway-api.sigs.k8s.io/reference/api-spec/main/spec/#httprouterule),
+so HTTPProxy users moving between the two APIs can rely on the same mental
+model.
 
 ## Request Redirection
 

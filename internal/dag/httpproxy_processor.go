@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -311,6 +312,17 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_v1.HTTPProxy) {
 				return
 			}
 
+			// Fallback certificates and JWT verification are
+			// incompatible because fallback aggregates routes from
+			// multiple vhosts onto a single HTTPConnectionManager,
+			// and different vhosts may have different JWT providers
+			// that cannot all be installed on one filter chain.
+			if tls.EnableFallbackCertificate && len(proxy.Spec.VirtualHost.JWTProviders) > 0 {
+				validCond.AddError(contour_v1.ConditionTypeTLSError, "TLSIncompatibleFeatures",
+					"Spec.Virtualhost.TLS fallback & JWT providers are incompatible")
+				return
+			}
+
 			// If FallbackCertificate is enabled, but no cert passed, set error
 			if tls.EnableFallbackCertificate {
 				if p.FallbackCertificate == nil {
@@ -416,120 +428,154 @@ func (p *HTTPProxyProcessor) computeHTTPProxy(proxy *contour_v1.HTTPProxy) {
 					defaultJWTProvider = jwtProvider.Name
 				}
 
-				jwksURL, err := url.Parse(jwtProvider.RemoteJWKS.URI)
-				if err != nil {
-					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSURIInvalid",
-						"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI is invalid: %s", err)
+				if jwtProvider.RemoteJWKS.URI != "" && jwtProvider.LocalJWKS.SecretName != "" {
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "JWKSSourceConflict",
+						"Spec.VirtualHost.JWTProviders for provider %q is invalid: at most one of remoteJWKS or localJWKS may be set", jwtProvider.Name)
+					return
+				}
+				if jwtProvider.RemoteJWKS.URI == "" && jwtProvider.LocalJWKS.SecretName == "" {
+					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "JWKSSourceMissing",
+						"Spec.VirtualHost.JWTProviders for provider %q is invalid: exactly one of remoteJWKS or localJWKS must be set", jwtProvider.Name)
 					return
 				}
 
-				if jwksURL.Scheme != "http" && jwksURL.Scheme != "https" {
-					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSSchemeInvalid",
-						"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has invalid scheme %q, must be http or https", jwksURL.Scheme)
-					return
-				}
-
-				var uv *PeerValidationContext
-
-				if jwtProvider.RemoteJWKS.UpstreamValidation != nil {
-					if jwksURL.Scheme == "http" {
-						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
-							"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation must not be specified when URI scheme is http.")
-						return
-					}
-
-					caCertNamespacedName := k8s.NamespacedNameFrom(jwtProvider.RemoteJWKS.UpstreamValidation.CACertificate, k8s.DefaultNamespace(proxy.Namespace))
-					uv, err = p.source.LookupUpstreamValidation(jwtProvider.RemoteJWKS.UpstreamValidation, caCertNamespacedName, proxy.Namespace)
-					if err != nil {
-						if _, ok := err.(DelegationNotPermittedError); ok {
-							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCACertificateNotDelegated",
-								"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation.CACertificate Secret %q is not configured for certificate delegation", caCertNamespacedName)
-						} else {
-							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
-								"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation is invalid: %s", err)
-						}
-						return
-					}
-				}
-
-				jwksTimeout := time.Second
-				if len(jwtProvider.RemoteJWKS.Timeout) > 0 {
-					res, err := time.ParseDuration(jwtProvider.RemoteJWKS.Timeout)
-					if err != nil {
-						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSTimeoutInvalid",
-							"Spec.VirtualHost.JWTProviders.RemoteJWKS.Timeout is invalid: %s", err)
-						return
-					}
-
-					jwksTimeout = res
-				}
-
-				var cacheDuration *time.Duration
-				if len(jwtProvider.RemoteJWKS.CacheDuration) > 0 {
-					res, err := time.ParseDuration(jwtProvider.RemoteJWKS.CacheDuration)
-					if err != nil {
-						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCacheDurationInvalid",
-							"Spec.VirtualHost.JWTProviders.RemoteJWKS.CacheDuration is invalid: %s", err)
-						return
-					}
-
-					cacheDuration = &res
-				}
-
-				// Check for a specified port and use it, else use the
-				// standard ports by scheme.
-				var port int
 				switch {
-				case len(jwksURL.Port()) > 0:
-					p, err := strconv.Atoi(jwksURL.Port())
+				case jwtProvider.LocalJWKS.SecretName != "":
+					jwksSecretNamespacedName := types.NamespacedName{
+						Name:      jwtProvider.LocalJWKS.SecretName,
+						Namespace: proxy.Namespace,
+					}
+					jwksData, err := p.source.LookupJWKSFromSecret(jwksSecretNamespacedName, jwtProvider.LocalJWKS.Key)
 					if err != nil {
-						// This theoretically shouldn't be possible as jwksURL.Port() will
-						// only return a value if it's numeric, but we need to convert to
-						// int anyway so handle the error.
-						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSPortInvalid",
-							"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has an invalid port: %s", err)
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "LocalJWKSInvalid",
+							"Spec.VirtualHost.JWTProviders.LocalJWKS for provider %q is invalid: %s", jwtProvider.Name, err)
 						return
 					}
-					port = p
-				case jwksURL.Scheme == "http":
-					port = 80
-				case jwksURL.Scheme == "https":
-					port = 443
-				}
-
-				// Get the DNS lookup family if specified, otherwise
-				// default to the Contour-wide setting.
-				dnsLookupFamily := ""
-				switch jwtProvider.RemoteJWKS.DNSLookupFamily {
-				case "auto", "v4", "v6", "all":
-					dnsLookupFamily = jwtProvider.RemoteJWKS.DNSLookupFamily
-				case "":
-					dnsLookupFamily = string(p.DNSLookupFamily)
-				default:
-					validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSDNSLookupFamilyInvalid",
-						"Spec.VirtualHost.JWTProviders.RemoteJWKS.DNSLookupFamily has an invalid value %q, must be auto, all, v4 or v6", jwtProvider.RemoteJWKS.DNSLookupFamily)
-					return
-				}
-
-				svhost.JWTProviders = append(svhost.JWTProviders, JWTProvider{
-					Name:      jwtProvider.Name,
-					Issuer:    jwtProvider.Issuer,
-					Audiences: jwtProvider.Audiences,
-					RemoteJWKS: RemoteJWKS{
-						URI:     jwtProvider.RemoteJWKS.URI,
-						Timeout: jwksTimeout,
-						Cluster: DNSNameCluster{
-							Address:            jwksURL.Hostname(),
-							Scheme:             jwksURL.Scheme,
-							Port:               port,
-							DNSLookupFamily:    dnsLookupFamily,
-							UpstreamValidation: uv,
-							UpstreamTLS:        p.UpstreamTLS,
+					svhost.JWTProviders = append(svhost.JWTProviders, JWTProvider{
+						Name:      jwtProvider.Name,
+						Issuer:    jwtProvider.Issuer,
+						Audiences: jwtProvider.Audiences,
+						LocalJWKS: &LocalJWKS{
+							JWKS: jwksData,
 						},
-						CacheDuration: cacheDuration,
-					},
-					ForwardJWT: jwtProvider.ForwardJWT,
-				})
+						ForwardJWT: jwtProvider.ForwardJWT,
+					})
+				case jwtProvider.RemoteJWKS.URI != "":
+					jwksURL, err := url.Parse(jwtProvider.RemoteJWKS.URI)
+					if err != nil {
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSURIInvalid",
+							"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI is invalid: %s", err)
+						return
+					}
+
+					if jwksURL.Scheme != "http" && jwksURL.Scheme != "https" {
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSSchemeInvalid",
+							"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has invalid scheme %q, must be http or https", jwksURL.Scheme)
+						return
+					}
+
+					var uv *PeerValidationContext
+
+					if jwtProvider.RemoteJWKS.UpstreamValidation != nil {
+						if jwksURL.Scheme == "http" {
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
+								"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation must not be specified when URI scheme is http.")
+							return
+						}
+
+						caCertNamespacedName := k8s.NamespacedNameFrom(jwtProvider.RemoteJWKS.UpstreamValidation.CACertificate, k8s.DefaultNamespace(proxy.Namespace))
+						uv, err = p.source.LookupUpstreamValidation(jwtProvider.RemoteJWKS.UpstreamValidation, caCertNamespacedName, proxy.Namespace)
+						if err != nil {
+							if _, ok := err.(DelegationNotPermittedError); ok {
+								validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCACertificateNotDelegated",
+									"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation.CACertificate Secret %q is not configured for certificate delegation", caCertNamespacedName)
+							} else {
+								validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSUpstreamValidationInvalid",
+									"Spec.VirtualHost.JWTProviders.RemoteJWKS.UpstreamValidation is invalid: %s", err)
+							}
+							return
+						}
+					}
+
+					jwksTimeout := time.Second
+					if len(jwtProvider.RemoteJWKS.Timeout) > 0 {
+						res, err := time.ParseDuration(jwtProvider.RemoteJWKS.Timeout)
+						if err != nil {
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSTimeoutInvalid",
+								"Spec.VirtualHost.JWTProviders.RemoteJWKS.Timeout is invalid: %s", err)
+							return
+						}
+
+						jwksTimeout = res
+					}
+
+					var cacheDuration *time.Duration
+					if len(jwtProvider.RemoteJWKS.CacheDuration) > 0 {
+						res, err := time.ParseDuration(jwtProvider.RemoteJWKS.CacheDuration)
+						if err != nil {
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSCacheDurationInvalid",
+								"Spec.VirtualHost.JWTProviders.RemoteJWKS.CacheDuration is invalid: %s", err)
+							return
+						}
+
+						cacheDuration = &res
+					}
+
+					// Check for a specified port and use it, else use the
+					// standard ports by scheme.
+					var port int
+					switch {
+					case len(jwksURL.Port()) > 0:
+						p, err := strconv.Atoi(jwksURL.Port())
+						if err != nil {
+							// This theoretically shouldn't be possible as jwksURL.Port() will
+							// only return a value if it's numeric, but we need to convert to
+							// int anyway so handle the error.
+							validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSPortInvalid",
+								"Spec.VirtualHost.JWTProviders.RemoteJWKS.URI has an invalid port: %s", err)
+							return
+						}
+						port = p
+					case jwksURL.Scheme == "http":
+						port = 80
+					case jwksURL.Scheme == "https":
+						port = 443
+					}
+
+					// Get the DNS lookup family if specified, otherwise
+					// default to the Contour-wide setting.
+					dnsLookupFamily := ""
+					switch jwtProvider.RemoteJWKS.DNSLookupFamily {
+					case "auto", "v4", "v6", "all":
+						dnsLookupFamily = jwtProvider.RemoteJWKS.DNSLookupFamily
+					case "":
+						dnsLookupFamily = string(p.DNSLookupFamily)
+					default:
+						validCond.AddErrorf(contour_v1.ConditionTypeJWTVerificationError, "RemoteJWKSDNSLookupFamilyInvalid",
+							"Spec.VirtualHost.JWTProviders.RemoteJWKS.DNSLookupFamily has an invalid value %q, must be auto, all, v4 or v6", jwtProvider.RemoteJWKS.DNSLookupFamily)
+						return
+					}
+
+					svhost.JWTProviders = append(svhost.JWTProviders, JWTProvider{
+						Name:      jwtProvider.Name,
+						Issuer:    jwtProvider.Issuer,
+						Audiences: jwtProvider.Audiences,
+						RemoteJWKS: &RemoteJWKS{
+							URI:     jwtProvider.RemoteJWKS.URI,
+							Timeout: jwksTimeout,
+							Cluster: DNSNameCluster{
+								Address:            jwksURL.Hostname(),
+								Scheme:             jwksURL.Scheme,
+								Port:               port,
+								DNSLookupFamily:    dnsLookupFamily,
+								UpstreamValidation: uv,
+								UpstreamTLS:        p.UpstreamTLS,
+							},
+							CacheDuration: cacheDuration,
+						},
+						ForwardJWT: jwtProvider.ForwardJWT,
+					})
+				}
 			}
 		}
 	}
@@ -1232,7 +1278,7 @@ func toIPFilterRules(allowPolicy, denyPolicy []contour_v1.IPFilterPolicy, validC
 		validCond.AddError(contour_v1.ConditionTypeIPFilterError, "IncompatibleIPAddressFilters",
 			"cannot specify both `ipAllowPolicy` and `ipDenyPolicy`")
 		err = fmt.Errorf("invalid ip filter")
-		return
+		return allow, filters, err
 	case len(allowPolicy) > 0:
 		allow = true
 		ipPolicies = allowPolicy
@@ -1241,7 +1287,7 @@ func toIPFilterRules(allowPolicy, denyPolicy []contour_v1.IPFilterPolicy, validC
 		ipPolicies = denyPolicy
 	}
 	if ipPolicies == nil {
-		return
+		return allow, filters, err
 	}
 	filters = make([]IPFilterRule, 0, len(ipPolicies))
 	for _, p := range ipPolicies {
@@ -1270,7 +1316,7 @@ func toIPFilterRules(allowPolicy, denyPolicy []contour_v1.IPFilterPolicy, validC
 		allow = false
 		filters = nil
 	}
-	return
+	return allow, filters, err
 }
 
 // processHTTPProxyTCPProxy processes the spec.tcpproxy stanza in a HTTPProxy document
@@ -1479,12 +1525,7 @@ func (p *HTTPProxyProcessor) rootAllowed(namespace string) bool {
 	if len(p.source.RootNamespaces) == 0 {
 		return true
 	}
-	for _, ns := range p.source.RootNamespaces {
-		if ns == namespace {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.source.RootNamespaces, namespace)
 }
 
 func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(
@@ -1502,15 +1543,93 @@ func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(
 		return nil
 	}
 
-	ok, respTimeout := determineExtensionServiceTimeout(contour_v1.ConditionTypeAuthError, auth.ResponseTimeout, validCond, extSvc)
-	if !ok {
+	extAuth := NewExternalAuthorization(auth, validCond)
+	if extAuth == nil {
 		return nil
 	}
 
-	extAuth := &ExternalAuthorization{
-		AuthorizationService:         extSvc,
+	// If no explicit timeout was configured, fall back to the extension service's own timeout.
+	if extAuth.AuthorizationResponseTimeout.UseDefault() {
+		extAuth.AuthorizationResponseTimeout = extSvc.RouteTimeoutPolicy.ResponseTimeout
+	}
+
+	extAuth.AuthorizationService = extSvc
+	return extAuth
+}
+
+// convertHTTPAuthzAllowedHeaders converts API header match types to internal DAG types.
+// Assumes headers have already been validated with ExternalAuthAllowedHeadersValid.
+func convertHTTPAuthzAllowedHeaders(headers []contour_v1.HTTPAuthorizationServerAllowedHeaders) []HeaderNameMatchCondition {
+	var result []HeaderNameMatchCondition
+	for _, h := range headers {
+		var matchType, value string
+		switch {
+		case h.Exact != "":
+			matchType = HeaderNameMatchTypeExact
+			value = h.Exact
+		case h.Prefix != "":
+			matchType = HeaderNameMatchTypePrefix
+			value = h.Prefix
+		case h.Suffix != "":
+			matchType = HeaderNameMatchTypeSuffix
+			value = h.Suffix
+		case h.Contains != "":
+			matchType = HeaderNameMatchTypeContains
+			value = h.Contains
+		}
+
+		result = append(result, HeaderNameMatchCondition{
+			MatchType:  matchType,
+			Value:      value,
+			IgnoreCase: h.IgnoreCase,
+		})
+	}
+	return result
+}
+
+func NewExternalAuthorization(auth *contour_v1.AuthorizationServer, validCond *contour_v1.DetailedCondition) *ExternalAuthorization {
+	tout, err := timeout.Parse(auth.ResponseTimeout)
+	if err != nil {
+		validCond.AddErrorf(contour_v1.ConditionTypeAuthError, "AuthResponseTimeoutInvalid",
+			"Spec.Virtualhost.Authorization.ResponseTimeout is invalid: %s", err)
+		return nil
+	}
+
+	extAuthz := &ExternalAuthorization{
 		AuthorizationFailOpen:        auth.FailOpen,
-		AuthorizationResponseTimeout: *respTimeout,
+		AuthorizationResponseTimeout: tout,
+	}
+
+	switch auth.ServiceType {
+	case contour_v1.AuthorizationHTTPService:
+		extAuthz.ServiceAPIType = AuthorizationServiceHTTP
+	default:
+		extAuthz.ServiceAPIType = AuthorizationServiceGRPC
+	}
+
+	// Validate Context is only used with gRPC.
+	if auth.AuthPolicy != nil && len(auth.AuthPolicy.Context) > 0 && extAuthz.ServiceAPIType == AuthorizationServiceHTTP {
+		validCond.AddError(contour_v1.ConditionTypeAuthError, "AuthContextForHTTP",
+			"Spec.Virtualhost.Authorization.AuthPolicy.Context are only applied to grpc service type")
+		return nil
+	}
+
+	if auth.HTTPServerSettings != nil {
+		if err := ExternalAuthAllowedHeadersValid(auth.HTTPServerSettings.AllowedAuthorizationHeaders); err != nil {
+			validCond.AddErrorf(contour_v1.ConditionTypeAuthError, "AuthBadAllowedHeader",
+				"Spec.Virtualhost.Authorization.HTTPServerSettings.AllowedAuthorizationHeaders is invalid: %s", err)
+			return nil
+		}
+		extAuthz.HTTPAllowedAuthorizationHeaders = convertHTTPAuthzAllowedHeaders(auth.HTTPServerSettings.AllowedAuthorizationHeaders)
+
+		if err := ExternalAuthAllowedHeadersValid(auth.HTTPServerSettings.AllowedUpstreamHeaders); err != nil {
+			validCond.AddErrorf(contour_v1.ConditionTypeAuthError, "AuthBadAllowedHeader",
+				"Spec.Virtualhost.Authorization.HTTPServerSettings.AllowedUpstreamHeaders is invalid: %s", err)
+			return nil
+		}
+		extAuthz.HTTPAllowedUpstreamHeaders = convertHTTPAuthzAllowedHeaders(auth.HTTPServerSettings.AllowedUpstreamHeaders)
+
+		extAuthz.HTTPPathPrefix = auth.HTTPServerSettings.PathPrefix
 	}
 
 	if auth.WithRequestBody != nil {
@@ -1518,13 +1637,13 @@ func (p *HTTPProxyProcessor) computeVirtualHostAuthorization(
 		if auth.WithRequestBody.MaxRequestBytes != 0 {
 			maxRequestBytes = auth.WithRequestBody.MaxRequestBytes
 		}
-		extAuth.AuthorizationServerWithRequestBody = &AuthorizationServerBufferSettings{
+		extAuthz.AuthorizationServerWithRequestBody = &AuthorizationServerBufferSettings{
 			MaxRequestBytes:     maxRequestBytes,
 			AllowPartialMessage: auth.WithRequestBody.AllowPartialMessage,
 			PackAsBytes:         auth.WithRequestBody.PackAsBytes,
 		}
 	}
-	return extAuth
+	return extAuthz
 }
 
 func (p *HTTPProxyProcessor) computeVirtualHostExtProc(
@@ -1650,7 +1769,6 @@ func (p *HTTPProxyProcessor) computeSecureVirtualHostExtProc(
 	}
 	return true
 }
-
 func (p *HTTPProxyProcessor) computeSecureVirtualHostAuthorization(validCond *contour_v1.DetailedCondition, httpproxy *contour_v1.HTTPProxy, svhost *SecureVirtualHost) bool {
 	if httpproxy.Spec.VirtualHost.AuthorizationConfigured() && !httpproxy.Spec.VirtualHost.DisableAuthorization() && httpproxy.Spec.VirtualHost.Authorization.ExtensionServiceRef.IsConfigured() {
 		authorization := p.computeVirtualHostAuthorization(httpproxy.Spec.VirtualHost.Authorization, validCond, httpproxy)

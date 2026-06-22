@@ -249,6 +249,20 @@ func h2cCluster(c *envoy_config_cluster_v3.Cluster) *envoy_config_cluster_v3.Clu
 	return c
 }
 
+func http1Cluster(c *envoy_config_cluster_v3.Cluster) *envoy_config_cluster_v3.Cluster {
+	c.TypedExtensionProtocolOptions = map[string]*anypb.Any{
+		"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": protobuf.MustMarshalAny(
+			&envoy_upstream_http_v3.HttpProtocolOptions{
+				UpstreamProtocolOptions: &envoy_upstream_http_v3.HttpProtocolOptions_ExplicitHttpConfig_{
+					ExplicitHttpConfig: &envoy_upstream_http_v3.HttpProtocolOptions_ExplicitHttpConfig{
+						ProtocolConfig: &envoy_upstream_http_v3.HttpProtocolOptions_ExplicitHttpConfig_HttpProtocolOptions{},
+					},
+				},
+			}),
+	}
+	return c
+}
+
 func withConnectionTimeout(c *envoy_config_cluster_v3.Cluster, timeout time.Duration, httpVersion envoy_v3.HTTPVersionType) *envoy_config_cluster_v3.Cluster {
 	var config *envoy_upstream_http_v3.HttpProtocolOptions_ExplicitHttpConfig
 
@@ -313,10 +327,8 @@ func withPrefixRewrite(route *envoy_config_route_v3.Route_Route, replacement str
 
 func withRetryPolicy(route *envoy_config_route_v3.Route_Route, retryOn string, numRetries uint32, perTryTimeout time.Duration) *envoy_config_route_v3.Route_Route {
 	route.Route.RetryPolicy = &envoy_config_route_v3.RetryPolicy{
-		RetryOn: retryOn,
-	}
-	if numRetries > 0 {
-		route.Route.RetryPolicy.NumRetries = wrapperspb.UInt32(numRetries)
+		RetryOn:    retryOn,
+		NumRetries: wrapperspb.UInt32(numRetries),
 	}
 	if perTryTimeout > 0 {
 		route.Route.RetryPolicy.PerTryTimeout = durationpb.New(perTryTimeout)
@@ -508,7 +520,7 @@ func httpsFilterFor(vhost string) *envoy_config_listener_v3.Filter {
 		XDSClusterName: envoy_v3.DefaultXDSClusterName,
 	})
 	return envoyGen.HTTPConnectionManagerBuilder().
-		AddFilter(envoy_v3.FilterMisdirectedRequests(vhost)).
+		AddFilter(envoy_v3.FilterMisdirectedRequests()).
 		DefaultFilters().
 		RouteConfigName(path.Join("https", vhost)).
 		MetricsPrefix(xdscache_v3.ENVOY_HTTPS_LISTENER).
@@ -533,7 +545,7 @@ func httpsFilterForGateway(listener, vhost string) *envoy_config_listener_v3.Fil
 		XDSClusterName: envoy_v3.DefaultXDSClusterName,
 	})
 	return envoyGen.HTTPConnectionManagerBuilder().
-		AddFilter(envoy_v3.FilterMisdirectedRequests(vhost)).
+		AddFilter(envoy_v3.FilterMisdirectedRequests()).
 		DefaultFilters().
 		RouteConfigName(path.Join(listener, vhost)).
 		MetricsPrefix(listener).
@@ -549,7 +561,7 @@ func httpsFilterWithXfccFor(vhost string, d *dag.ClientCertificateDetails) *envo
 		XDSClusterName: envoy_v3.DefaultXDSClusterName,
 	})
 	return envoyGen.HTTPConnectionManagerBuilder().
-		AddFilter(envoy_v3.FilterMisdirectedRequests(vhost)).
+		AddFilter(envoy_v3.FilterMisdirectedRequests()).
 		DefaultFilters().
 		RouteConfigName(path.Join("https", vhost)).
 		MetricsPrefix(xdscache_v3.ENVOY_HTTPS_LISTENER).
@@ -569,7 +581,7 @@ func authzFilterFor(
 		XDSClusterName: envoy_v3.DefaultXDSClusterName,
 	})
 	return envoyGen.HTTPConnectionManagerBuilder().
-		AddFilter(envoy_v3.FilterMisdirectedRequests(vhost)).
+		AddFilter(envoy_v3.FilterMisdirectedRequests()).
 		DefaultFilters().
 		AddFilter(&envoy_filter_network_http_connection_manager_v3.HttpFilter{
 			Name: envoy_v3.ExtAuthzFilterName,
@@ -591,7 +603,7 @@ func jwtAuthnFilterFor(
 		XDSClusterName: envoy_v3.DefaultXDSClusterName,
 	})
 	return envoyGen.HTTPConnectionManagerBuilder().
-		AddFilter(envoy_v3.FilterMisdirectedRequests(vhost)).
+		AddFilter(envoy_v3.FilterMisdirectedRequests()).
 		DefaultFilters().
 		AddFilter(&envoy_filter_network_http_connection_manager_v3.HttpFilter{
 			Name: envoy_v3.JWTAuthnFilterName,

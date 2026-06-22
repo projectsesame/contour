@@ -21,7 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -349,15 +349,12 @@ func TestParseHTTPVersions(t *testing.T) {
 	}
 
 	for name, testcase := range cases {
-		testcase := testcase
 		t.Run(name, func(t *testing.T) {
 			vers := parseDefaultHTTPVersions(testcase.versions)
 
 			// parseDefaultHTTPVersions doesn't guarantee a stable result, but the order doesn't matter.
-			sort.Slice(vers,
-				func(i, j int) bool { return vers[i] < vers[j] })
-			sort.Slice(testcase.parseVersions,
-				func(i, j int) bool { return testcase.parseVersions[i] < testcase.parseVersions[j] })
+			slices.Sort(vers)
+			slices.Sort(testcase.parseVersions)
 
 			assert.Equal(t, testcase.parseVersions, vers)
 		})
@@ -410,9 +407,11 @@ func defaultContourConfiguration() contour_v1alpha1.ContourConfigurationSpec {
 				DisableAllowChunkedLength:  ptr.To(false),
 				DisableMergeSlashes:        ptr.To(false),
 				ServerHeaderTransformation: contour_v1alpha1.OverwriteServerHeader,
-				TLS: &contour_v1alpha1.EnvoyTLS{
-					MinimumProtocolVersion: "",
-					MaximumProtocolVersion: "",
+				TLS: &contour_v1alpha1.EnvoyListenerTLS{
+					EnvoyTLS: contour_v1alpha1.EnvoyTLS{
+						MinimumProtocolVersion: "",
+						MaximumProtocolVersion: "",
+					},
 				},
 				SocketOptions: &contour_v1alpha1.SocketOptions{
 					TOS:          0,
@@ -833,6 +832,8 @@ func TestConvertServeContext(t *testing.T) {
 					IncludePodDetail: ptr.To(false),
 					ServiceName:      ptr.To("contour"),
 					OverallSampling:  ptr.To("100"),
+					ClientSampling:   ptr.To("100"),
+					RandomSampling:   ptr.To("100"),
 					MaxPathTagLength: ptr.To(uint32(256)),
 					CustomTags: []config.CustomTag{
 						{
@@ -853,6 +854,8 @@ func TestConvertServeContext(t *testing.T) {
 					IncludePodDetail: ptr.To(false),
 					ServiceName:      ptr.To("contour"),
 					OverallSampling:  ptr.To("100"),
+					ClientSampling:   ptr.To("100"),
+					RandomSampling:   ptr.To("100"),
 					MaxPathTagLength: ptr.To(uint32(256)),
 					CustomTags: []*contour_v1alpha1.CustomTag{
 						{
@@ -915,6 +918,22 @@ func TestConvertServeContext(t *testing.T) {
 				cfg.Envoy.OMEnforcedHealth = &contour_v1alpha1.HealthConfig{
 					Address: "0.0.0.0",
 					Port:    8005,
+				}
+				return cfg
+			},
+		},
+		"tls fingerprinting": {
+			getServeContext: func(ctx *serveContext) *serveContext {
+				ctx.Config.TLS.Fingerprint = &config.TLSFingerprint{
+					JA3: ptr.To(true),
+					JA4: ptr.To(true),
+				}
+				return ctx
+			},
+			getContourConfiguration: func(cfg contour_v1alpha1.ContourConfigurationSpec) contour_v1alpha1.ContourConfigurationSpec {
+				cfg.Envoy.Listener.TLS.Fingerprint = &contour_v1alpha1.TLSFingerprint{
+					JA3: ptr.To(true),
+					JA4: ptr.To(true),
 				}
 				return cfg
 			},

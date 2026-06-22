@@ -12,6 +12,8 @@ If verification fails, an HTTP 401 (Unauthorized) will be returned to the client
 
 JWT verification is only supported on TLS-terminating virtual hosts.
 
+JWT verification is not compatible with the [fallback certificate](tls-termination.md#fallback-certificate) feature.
+
 ## Configuring providers and rules
 
 A JWT provider is configured for an HTTPProxy's virtual host, and defines how to verify JWTs:
@@ -87,6 +89,42 @@ The `caSecret` can be a namespaced name of the form `<namespace>/<secret-name>`.
 If the CA secret's namespace is not the same namespace as the `HTTPProxy` resource, [TLS Certificate Delegation][5] must be used to allow the owner of the CA certificate secret to delegate, for the purposes of referencing the CA certificate in a different namespace, permission to Contour to read the Secret object from another namespace.
 
 **Note:** If `spec.virtualhost.jwtProviders[].remoteJWKS.validation` is present, `spec.virtualhost.jwtProviders[].remoteJWKS.uri` must have a scheme of `https`.
+
+## Using a local JWKS from a Kubernetes Secret
+
+Instead of fetching keys from a remote endpoint, you can load them from a Kubernetes Secret:
+
+```yaml
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: jwt-verification-local
+  namespace: default
+spec:
+  virtualhost:
+    fqdn: example.com
+    tls:
+      secretName: example-com-tls-cert
+    jwtProviders:
+      - name: provider-1
+        issuer: example.com
+        localJWKS:
+          secretName: my-jwks
+          key: jwks.json
+  routes:
+    - conditions:
+        - prefix: /
+      jwtVerificationPolicy:
+        require: provider-1
+      services:
+        - name: s1
+          port: 80
+```
+
+The Secret must be of type `Opaque` and reside in the same namespace as the HTTPProxy.
+The data entry referenced by `key` must contain a valid JWKS JSON object.
+
+Each provider must specify exactly one of `remoteJWKS` or `localJWKS`.
 
 ## Setting a default provider
 
