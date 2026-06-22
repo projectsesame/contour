@@ -136,7 +136,7 @@ multiarch-build:
 		--build-arg "BUILD_GOEXPERIMENT=$(BUILD_GOEXPERIMENT)" \
 		--label "commit.sync.upstream=da87188" \
 		$(DOCKER_BUILD_LABELS) \
-		-t release.daocloud.io/skoala/contour:v1.33.5-da87188  \
+		-t release-ci.daocloud.io/skoala/contour:v1.33.5-da87188  \
 		$(shell pwd) \
 		--push
 
