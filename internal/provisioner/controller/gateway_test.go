@@ -139,6 +139,31 @@ func TestGatewayReconcile(t *testing.T) {
 				require.NoError(t, r.client.Get(context.Background(), keyFor(deploy), deploy))
 			},
 		},
+		"An unmanaged gateway is not reconciled": {
+			gatewayClass: reconcilableGatewayClass("gatewayclass-1", controller),
+			gateway: func() *gatewayapi_v1.Gateway {
+				gw := makeGateway()
+				gw.Annotations = map[string]string{
+					model.UnmanagedAnnotation: "true",
+				}
+				return gw
+			}(),
+			assertions: func(t *testing.T, r *gatewayReconciler, gw *gatewayapi_v1.Gateway, reconcileErr error) {
+				require.NoError(t, reconcileErr)
+
+				require.NoError(t, r.client.Get(context.Background(), keyFor(gw), gw))
+				require.Empty(t, gw.Status.Conditions)
+
+				deploy := &apps_v1.Deployment{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "gateway-1",
+						Name:      "contour-gateway-1",
+					},
+				}
+				err := r.client.Get(context.Background(), keyFor(deploy), deploy)
+				assert.True(t, errors.IsNotFound(err))
+			},
+		},
 		"A gateway for a non-reconcilable gatewayclass (not accepted) is not reconciled": {
 			gatewayClass: &gatewayapi_v1.GatewayClass{
 				ObjectMeta: meta_v1.ObjectMeta{

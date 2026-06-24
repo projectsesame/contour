@@ -32,6 +32,11 @@ const (
 	// GatewayAPIOwningGatewayNameLabel is the Gateway API-defined owner reference label applied
 	// to generated resources. The value should be the name of the Gateway.
 	GatewayAPIOwningGatewayNameLabel = "gateway.networking.k8s.io/gateway-name"
+
+	// UnmanagedAnnotation marks a Gateway or generated resource as unmanaged by
+	// the gateway provisioner. When set to "true", the provisioner leaves the
+	// object untouched during reconciliation.
+	UnmanagedAnnotation = "projectcontour.io/unmanaged"
 )
 
 // Default returns a default instance of a Contour

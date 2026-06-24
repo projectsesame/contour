@@ -169,6 +169,11 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("failed to get gateway %s: %w", req, err)
 	}
 
+	if isGatewayUnmanaged(gateway) {
+		log.V(1).Info("gateway is marked unmanaged; skipping resource reconciliation")
+		return ctrl.Result{}, nil
+	}
+
 	// Theoretically all event sources should be filtered already, but doesn't hurt
 	// to double-check this here to ensure we only reconcile gateways for accepted
 	// gateway classes the provisioner controls.
@@ -504,4 +509,12 @@ func (r *gatewayReconciler) getGatewayClassParams(ctx context.Context, gatewayCl
 	}
 
 	return gcParams, nil
+}
+
+func isGatewayUnmanaged(gateway *gatewayapi_v1.Gateway) bool {
+	if gateway == nil {
+		return false
+	}
+
+	return gateway.Annotations[model.UnmanagedAnnotation] == "true"
 }
