@@ -64,6 +64,20 @@ func (t *TracingConfig) Validate() error {
 		}
 	}
 
+	if t.ClientSampling != nil {
+		_, err := strconv.ParseFloat(*t.ClientSampling, 64)
+		if err != nil {
+			return fmt.Errorf("invalid tracing client sampling: %v", err)
+		}
+	}
+
+	if t.RandomSampling != nil {
+		_, err := strconv.ParseFloat(*t.RandomSampling, 64)
+		if err != nil {
+			return fmt.Errorf("invalid tracing random sampling: %v", err)
+		}
+	}
+
 	var customTagNames []string
 
 	for _, customTag := range t.CustomTags {
@@ -179,7 +193,7 @@ func ValidateTLSProtocolVersions(minVersion, maxVersion string) error {
 func isValidTLSCipher(cipherSpec string) bool {
 	// Equal-preference group: [cipher1|cipher2|...]
 	if strings.HasPrefix(cipherSpec, "[") && strings.HasSuffix(cipherSpec, "]") {
-		for _, cipher := range strings.Split(strings.Trim(cipherSpec, "[]"), "|") {
+		for cipher := range strings.SplitSeq(strings.Trim(cipherSpec, "[]"), "|") {
 			if _, ok := ValidTLSCiphers[cipher]; !ok {
 				return false
 			}

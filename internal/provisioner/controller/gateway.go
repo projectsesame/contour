@@ -16,6 +16,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -221,9 +222,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		// if there is a same name pair, overwrite it
 		// nolint:staticcheck
-		for k, v := range gatewayClassParams.Spec.ResourceLabels {
-			contourModel.Spec.ResourceLabels[k] = v
-		}
+		maps.Copy(contourModel.Spec.ResourceLabels, gatewayClassParams.Spec.ResourceLabels)
 
 		if gatewayClassParams.Spec.Contour != nil {
 			contourParams := gatewayClassParams.Spec.Contour
@@ -264,14 +263,11 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				contourModel.Spec.ContourDeploymentStrategy = *contourParams.Deployment.Strategy
 			}
 
-			for k, v := range contourParams.PodAnnotations {
-				contourModel.Spec.ContourPodAnnotations[k] = v
-			}
+			maps.Copy(contourModel.Spec.ContourPodAnnotations, contourParams.PodAnnotations)
 
 			if contourParams.CertLifetime > 0 {
 				contourModel.Spec.CertLifetime = contourParams.CertLifetime
 			}
-
 		}
 
 		if gatewayClassParams.Spec.Envoy != nil {
@@ -340,9 +336,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			contourModel.Spec.EnvoyExtraVolumes = append(contourModel.Spec.EnvoyExtraVolumes, envoyParams.ExtraVolumes...)
 
 			// Pod Annotations
-			for k, v := range envoyParams.PodAnnotations {
-				contourModel.Spec.EnvoyPodAnnotations[k] = v
-			}
+			maps.Copy(contourModel.Spec.EnvoyPodAnnotations, envoyParams.PodAnnotations)
 
 			// Pod Labels
 			for k, v := range envoyParams.PodLabels {

@@ -161,6 +161,12 @@ type ListenerConfig struct {
 
 	// SocketOptions configures socket options HTTP and HTTPS listeners.
 	SocketOptions *contour_v1alpha1.SocketOptions
+
+	// EnableJA3Fingerprinting enables JA3 fingerprinting for HTTPS listeners.
+	EnableJA3Fingerprinting *bool
+
+	// EnableJA4Fingerprinting enables JA4 fingerprinting for HTTPS listeners.
+	EnableJA4Fingerprinting *bool
 }
 
 type ExtensionServiceConfig struct {
@@ -175,6 +181,10 @@ type TracingConfig struct {
 	ServiceName string
 
 	OverallSampling float64
+
+	ClientSampling float64
+
+	RandomSampling float64
 
 	MaxPathTagLength uint32
 
@@ -207,9 +217,8 @@ type RateLimitConfig struct {
 
 type GlobalExternalAuthConfig struct {
 	ExtensionServiceConfig
-	FailOpen        bool
-	Context         map[string]string
-	WithRequestBody *dag.AuthorizationServerBufferSettings
+	dag.ExternalAuthorization
+	Context map[string]string
 }
 
 type GlobalExtProcConfig struct {
@@ -437,7 +446,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 				listener.Port,
 				cfg.PerConnectionBufferLimitBytes,
 				socketOptions,
-				secureProxyProtocol(cfg.UseProxyProto),
+				secureProxyProtocol(cfg),
 			)
 		}
 
@@ -467,7 +476,7 @@ func (c *ListenerCache) OnChange(root *dag.DAG) {
 				cm := c.envoyGen.HTTPConnectionManagerBuilder().
 					Compression(cfg.Compression).
 					Codec(envoy_v3.CodecForVersions(cfg.DefaultHTTPVersions...)).
-					AddFilter(envoy_v3.FilterMisdirectedRequests(vh.VirtualHost.Name)).
+					AddFilter(envoy_v3.FilterMisdirectedRequests()).
 					DefaultFilters().
 					AddFilter(envoy_v3.FilterJWTAuthN(vh.JWTProviders)).
 					AddFilter(authzFilter).
@@ -621,9 +630,13 @@ func httpGlobalExternalAuthConfig(config *GlobalExternalAuthConfig) *envoy_filte
 			Name: dag.ExtensionClusterName(config.ExtensionService),
 			SNI:  config.SNI,
 		},
-		AuthorizationFailOpen:              config.FailOpen,
+		ServiceAPIType:                     config.ServiceAPIType,
+		HTTPAllowedAuthorizationHeaders:    config.HTTPAllowedAuthorizationHeaders,
+		HTTPAllowedUpstreamHeaders:         config.HTTPAllowedUpstreamHeaders,
+		HTTPPathPrefix:                     config.HTTPPathPrefix,
+		AuthorizationFailOpen:              config.AuthorizationFailOpen,
 		AuthorizationResponseTimeout:       config.Timeout,
-		AuthorizationServerWithRequestBody: config.WithRequestBody,
+		AuthorizationServerWithRequestBody: config.AuthorizationServerWithRequestBody,
 	})
 }
 
@@ -672,6 +685,8 @@ func envoyTracingConfig(config *TracingConfig) *envoy_v3.EnvoyTracingConfig {
 		SNI:              config.SNI,
 		Timeout:          config.Timeout,
 		OverallSampling:  config.OverallSampling,
+		ClientSampling:   config.ClientSampling,
+		RandomSampling:   config.RandomSampling,
 		MaxPathTagLength: config.MaxPathTagLength,
 		CustomTags:       envoyTracingConfigCustomTag(config.CustomTags),
 	}
@@ -702,6 +717,6 @@ func proxyProtocol(useProxy bool) []*envoy_config_listener_v3.ListenerFilter {
 	return nil
 }
 
-func secureProxyProtocol(useProxy bool) []*envoy_config_listener_v3.ListenerFilter {
-	return append(proxyProtocol(useProxy), envoy_v3.TLSInspector())
+func secureProxyProtocol(cfg ListenerConfig) []*envoy_config_listener_v3.ListenerFilter {
+	return append(proxyProtocol(cfg.UseProxyProto), envoy_v3.TLSInspectorWithConfig(cfg.EnableJA3Fingerprinting, cfg.EnableJA4Fingerprinting))
 }

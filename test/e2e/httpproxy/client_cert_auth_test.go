@@ -16,15 +16,14 @@
 package httpproxy
 
 import (
-	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"strings"
 
-	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	certmanagermetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tsaarni/certyaml"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
@@ -35,285 +34,76 @@ func testClientCertAuth(namespace string) {
 	Specify("client requests can be authenticated", func() {
 		t := f.T()
 
-		// Create a self-signed Issuer.
-		selfSignedIssuer := &certmanagerv1.Issuer{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "selfsigned",
-			},
-			Spec: certmanagerv1.IssuerSpec{
-				IssuerConfig: certmanagerv1.IssuerConfig{
-					SelfSigned: &certmanagerv1.SelfSignedIssuer{},
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), selfSignedIssuer))
-
-		// Using the selfsigned issuer, create a CA signing certificate for the
-		// test issuer.
-		caSigningCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ca-projectcontour-io",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				IsCA: true,
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageSigning,
-					certmanagerv1.UsageCertSign,
-				},
-				Subject: &certmanagerv1.X509Subject{
-					OrganizationalUnits: []string{
-						"io",
-						"projectcontour",
-						"testsuite",
-					},
-				},
-				CommonName: "issuer",
-				SecretName: "ca-projectcontour-io",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "selfsigned",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), caSigningCert))
-
-		// Create a local CA issuer with the CA certificate that the selfsigned
-		// issuer gave us.
-		localCAIssuer := &certmanagerv1.Issuer{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ca-projectcontour-io",
-			},
-			Spec: certmanagerv1.IssuerSpec{
-				IssuerConfig: certmanagerv1.IssuerConfig{
-					CA: &certmanagerv1.CAIssuer{
-						SecretName: "ca-projectcontour-io",
-					},
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), localCAIssuer))
-
-		// Using the selfsigned issuer, create a CA signing certificate for another
-		// test issuer.
-		caSigningCert2 := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ca-notprojectcontour-io",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				IsCA: true,
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageSigning,
-					certmanagerv1.UsageCertSign,
-				},
-				Subject: &certmanagerv1.X509Subject{
-					OrganizationalUnits: []string{
-						"io",
-						"notprojectcontour",
-						"testsuite",
-					},
-				},
-				CommonName: "issuer",
-				SecretName: "ca-notprojectcontour-io",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "selfsigned",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), caSigningCert2))
-
-		// Create a local CA issuer with the CA certificate that the selfsigned
-		// issuer gave us.
-		localCAIssuer2 := &certmanagerv1.Issuer{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ca-notprojectcontour-io",
-			},
-			Spec: certmanagerv1.IssuerSpec{
-				IssuerConfig: certmanagerv1.IssuerConfig{
-					CA: &certmanagerv1.CAIssuer{
-						SecretName: "ca-notprojectcontour-io",
-					},
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), localCAIssuer2))
+		caProjectcontour := f.Certs.CreateCA(namespace, "ca-projectcontour-io")
+		caNotProjectcontour := f.Certs.CreateCA(namespace, "ca-notprojectcontour-io")
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-no-auth")
 
-		// Get a server certificate for echo-no-auth.
-		echoNoAuthCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-no-auth-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-no-auth.projectcontour.io"},
-				SecretName: "echo-no-auth",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoNoAuthCert))
+		f.Certs.CreateCertificate(namespace, "echo-no-auth", &certyaml.Certificate{
+			Subject:         "cn=echo-no-auth-cert",
+			SubjectAltNames: []string{"DNS:echo-no-auth.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-with-auth")
 
-		// Get a server certificate for echo-with-auth.
-		echoWithAuthCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-with-auth-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-with-auth.projectcontour.io"},
-				SecretName: "echo-with-auth",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoWithAuthCert))
+		f.Certs.CreateCertificate(namespace, "echo-with-auth", &certyaml.Certificate{
+			Subject:         "cn=echo-with-auth-cert",
+			SubjectAltNames: []string{"DNS:echo-with-auth.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-with-auth-skip-verify")
 
-		// Get a server certificate for echo-with-auth-skip-verify.
-		echoWithAuthSkipVerifyCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-with-auth-skip-verify-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-with-auth-skip-verify.projectcontour.io"},
-				SecretName: "echo-with-auth-skip-verify",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoWithAuthSkipVerifyCert))
+		f.Certs.CreateCertificate(namespace, "echo-with-auth-skip-verify", &certyaml.Certificate{
+			Subject:         "cn=echo-with-auth-skip-verify-cert",
+			SubjectAltNames: []string{"DNS:echo-with-auth-skip-verify.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-with-auth-skip-verify-with-ca")
 
-		// Get a server certificate for echo-with-auth-skip-verify-with-ca.
-		echoWithAuthSkipVerifyWithCACert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-with-auth-skip-verify-with-ca-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-with-auth-skip-verify-with-ca.projectcontour.io"},
-				SecretName: "echo-with-auth-skip-verify-with-ca",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoWithAuthSkipVerifyWithCACert))
+		f.Certs.CreateCertificate(namespace, "echo-with-auth-skip-verify-with-ca", &certyaml.Certificate{
+			Subject:         "cn=echo-with-auth-skip-verify-with-ca-cert",
+			SubjectAltNames: []string{"DNS:echo-with-auth-skip-verify-with-ca.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-with-optional-auth")
 
-		// Get a server certificate for echo-with-optional-auth.
-		echoWithOptionalAuth := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-with-optional-auth-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-with-optional-auth.projectcontour.io"},
-				SecretName: "echo-with-optional-auth",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoWithOptionalAuth))
+		f.Certs.CreateCertificate(namespace, "echo-with-optional-auth", &certyaml.Certificate{
+			Subject:         "cn=echo-with-optional-auth-cert",
+			SubjectAltNames: []string{"DNS:echo-with-optional-auth.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
 		f.Fixtures.Echo.Deploy(namespace, "echo-with-optional-auth-no-ca")
 
-		// Get a server certificate for echo-with-optional-auth-no-ca.
-		echoWithOptionalAuthNoCA := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-with-optional-auth-no-ca-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				DNSNames:   []string{"echo-with-optional-auth-no-ca.projectcontour.io"},
-				SecretName: "echo-with-optional-auth-no-ca",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		require.NoError(t, f.Client.Create(context.TODO(), echoWithOptionalAuthNoCA))
+		f.Certs.CreateCertificate(namespace, "echo-with-optional-auth-no-ca", &certyaml.Certificate{
+			Subject:         "cn=echo-with-optional-auth-no-ca-cert",
+			SubjectAltNames: []string{"DNS:echo-with-optional-auth-no-ca.projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          caProjectcontour,
+		})
 
-		// Get a client certificate.
-		clientCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-client-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageClientAuth,
-				},
-				EmailAddresses: []string{
-					"client@projectcontour.io",
-				},
-				CommonName: "client",
-				SecretName: "echo-client",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-projectcontour-io",
-				},
-			},
-		}
-		// Wait for the Cert to be ready since we'll directly download
-		// the secret contents for use as a client cert later on.
-		require.True(f.T(), f.Certs.CreateCertAndWaitFor(clientCert, certIsReady))
+		f.Certs.CreateCertificate(namespace, "echo-client", &certyaml.Certificate{
+			Subject:         "cn=client",
+			SubjectAltNames: []string{"email:client@projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			Issuer:          caProjectcontour,
+		})
 
-		// Get another client certificate.
-		clientCertInvalid := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "echo-client-cert-invalid",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageClientAuth,
-				},
-				EmailAddresses: []string{
-					"badclient@projectcontour.io",
-				},
-				CommonName: "badclient",
-				SecretName: "echo-client-invalid",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-notprojectcontour-io",
-				},
-			},
-		}
-		// Wait for the Cert to be ready since we'll directly download
-		// the secret contents for use as a client cert later on.
-		require.True(f.T(), f.Certs.CreateCertAndWaitFor(clientCertInvalid, certIsReady))
+		f.Certs.CreateCertificate(namespace, "echo-client-invalid", &certyaml.Certificate{
+			Subject:         "cn=badclient",
+			SubjectAltNames: []string{"email:badclient@projectcontour.io"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			Issuer:          caNotProjectcontour,
+		})
 
 		// This proxy does not require client certificate auth.
 		noAuthProxy := &contour_v1.HTTPProxy{
@@ -496,8 +286,8 @@ func testClientCertAuth(namespace string) {
 		require.True(f.T(), f.CreateHTTPProxyAndWaitFor(optionalAuthNoCAProxy, e2e.HTTPProxyValid))
 
 		// get the valid & invalid client certs
-		validClientCert, _ := f.Certs.GetTLSCertificate(namespace, clientCert.Spec.SecretName)
-		invalidClientCert, _ := f.Certs.GetTLSCertificate(namespace, clientCertInvalid.Spec.SecretName)
+		validClientCert, _ := f.Certs.GetTLSCertificate(namespace, "echo-client")
+		invalidClientCert, _ := f.Certs.GetTLSCertificate(namespace, "echo-client-invalid")
 
 		cases := map[string]struct {
 			host       string
@@ -641,13 +431,4 @@ func optUseClientCert(cert *tls.Certificate) func(*tls.Config) {
 			return cert, nil
 		}
 	}
-}
-
-func certIsReady(cert *certmanagerv1.Certificate) bool {
-	for _, cond := range cert.Status.Conditions {
-		if cond.Type == certmanagerv1.CertificateConditionReady && cond.Status == certmanagermetav1.ConditionTrue {
-			return true
-		}
-	}
-	return false
 }

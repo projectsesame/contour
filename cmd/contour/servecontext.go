@@ -249,7 +249,7 @@ func (ctx *serveContext) proxyRootNamespaces() []string {
 		return nil
 	}
 	var ns []string
-	for _, s := range strings.Split(ctx.rootNamespaces, ",") {
+	for s := range strings.SplitSeq(ctx.rootNamespaces, ",") {
 		ns = append(ns, strings.TrimSpace(s))
 	}
 	return ns
@@ -260,7 +260,7 @@ func (ctx *serveContext) watchedNamespaces() []string {
 		return nil
 	}
 	var ns []string
-	for _, s := range strings.Split(ctx.watchNamespaces, ",") {
+	for s := range strings.SplitSeq(ctx.watchNamespaces, ",") {
 		ns = append(ns, strings.TrimSpace(s))
 	}
 	return ns
@@ -413,6 +413,8 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 			IncludePodDetail: ctx.Config.Tracing.IncludePodDetail,
 			ServiceName:      ctx.Config.Tracing.ServiceName,
 			OverallSampling:  ctx.Config.Tracing.OverallSampling,
+			ClientSampling:   ctx.Config.Tracing.ClientSampling,
+			RandomSampling:   ctx.Config.Tracing.RandomSampling,
 			MaxPathTagLength: ctx.Config.Tracing.MaxPathTagLength,
 			CustomTags:       customTags,
 			ExtensionService: &contour_v1alpha1.NamespacedName{
@@ -457,8 +459,13 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 				Name:      nsedName.Name,
 				Namespace: nsedName.Namespace,
 			},
+			ServiceType:     ctx.Config.GlobalExternalAuthorization.ServiceType,
 			ResponseTimeout: ctx.Config.GlobalExternalAuthorization.ResponseTimeout,
 			FailOpen:        ctx.Config.GlobalExternalAuthorization.FailOpen,
+		}
+
+		if ctx.Config.GlobalExternalAuthorization.HTTPServerSettings != nil {
+			globalExtAuth.HTTPServerSettings = ctx.Config.GlobalExternalAuthorization.HTTPServerSettings
 		}
 
 		if ctx.Config.GlobalExternalAuthorization.AuthPolicy != nil {
@@ -528,6 +535,14 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 		}
 	}
 
+	var fingerprint *contour_v1alpha1.TLSFingerprint
+	if ctx.Config.TLS.Fingerprint != nil {
+		fingerprint = &contour_v1alpha1.TLSFingerprint{
+			JA3: ctx.Config.TLS.Fingerprint.JA3,
+			JA4: ctx.Config.TLS.Fingerprint.JA4,
+		}
+	}
+
 	contourMetrics := contour_v1alpha1.MetricsConfig{
 		Address: ctx.metricsAddr,
 		Port:    ctx.metricsPort,
@@ -580,10 +595,13 @@ func (ctx *serveContext) convertToContourConfigurationSpec() contour_v1alpha1.Co
 				MaxRequestsPerIOCycle:         ctx.Config.Listener.MaxRequestsPerIOCycle,
 				HTTP2MaxConcurrentStreams:     ctx.Config.Listener.HTTP2MaxConcurrentStreams,
 				MaxConnectionsPerListener:     ctx.Config.Listener.MaxConnectionsPerListener,
-				TLS: &contour_v1alpha1.EnvoyTLS{
-					MinimumProtocolVersion: ctx.Config.TLS.MinimumProtocolVersion,
-					MaximumProtocolVersion: ctx.Config.TLS.MaximumProtocolVersion,
-					CipherSuites:           cipherSuites,
+				TLS: &contour_v1alpha1.EnvoyListenerTLS{
+					EnvoyTLS: contour_v1alpha1.EnvoyTLS{
+						MinimumProtocolVersion: ctx.Config.TLS.MinimumProtocolVersion,
+						MaximumProtocolVersion: ctx.Config.TLS.MaximumProtocolVersion,
+						CipherSuites:           cipherSuites,
+					},
+					Fingerprint: fingerprint,
 				},
 				SocketOptions: &contour_v1alpha1.SocketOptions{
 					TOS:          ctx.Config.Listener.SocketOptions.TOS,

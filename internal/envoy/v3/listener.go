@@ -15,7 +15,6 @@ package v3
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +42,7 @@ import (
 	envoy_filter_network_http_connection_manager_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	envoy_filter_network_tcp_proxy_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/tcp_proxy/v3"
 	envoy_transport_socket_tls_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
+	envoy_matcher_v3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	envoy_type_v3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"google.golang.org/protobuf/proto"
@@ -67,7 +67,7 @@ const (
 	HTTPVersion3    HTTPVersionType = envoy_filter_network_http_connection_manager_v3.HttpConnectionManager_HTTP3
 )
 
-// ProtoNamesForVersions returns the slice of ALPN protocol names for the give HTTP versions.
+// ProtoNamesForVersions returns the slice of ALPN protocol names for the given HTTP versions.
 func ProtoNamesForVersions(versions ...HTTPVersionType) []string {
 	protocols := map[HTTPVersionType]string{
 		HTTPVersion1: "http/1.1",
@@ -116,12 +116,26 @@ func CodecForVersions(versions ...HTTPVersionType) HTTPVersionType {
 	}
 }
 
-// TLSInspector returns a new TLS inspector listener filter.
+// TLSInspector returns a new TLS inspector listener filter
+// with default settings (no JA3/JA4 fingerprinting).
 func TLSInspector() *envoy_config_listener_v3.ListenerFilter {
+	return TLSInspectorWithConfig(nil, nil)
+}
+
+// TLSInspectorWithConfig returns a new TLS inspector listener filter
+// with optional JA3/JA4 fingerprinting enabled.
+func TLSInspectorWithConfig(enableJA3, enableJA4 *bool) *envoy_config_listener_v3.ListenerFilter {
+	inspector := &envoy_filter_listener_tls_inspector_v3.TlsInspector{}
+	if enableJA3 != nil && *enableJA3 {
+		inspector.EnableJa3Fingerprinting = wrapperspb.Bool(true)
+	}
+	if enableJA4 != nil && *enableJA4 {
+		inspector.EnableJa4Fingerprinting = wrapperspb.Bool(true)
+	}
 	return &envoy_config_listener_v3.ListenerFilter{
 		Name: wellknown.TlsInspector,
 		ConfigType: &envoy_config_listener_v3.ListenerFilter_TypedConfig{
-			TypedConfig: protobuf.MustMarshalAny(&envoy_filter_listener_tls_inspector_v3.TlsInspector{}),
+			TypedConfig: protobuf.MustMarshalAny(inspector),
 		},
 	}
 }
@@ -425,9 +439,11 @@ func (b *httpConnectionManagerBuilder) DefaultFilters() *httpConnectionManagerBu
 			Name: LuaFilterName,
 			ConfigType: &envoy_filter_network_http_connection_manager_v3.HttpFilter_TypedConfig{
 				TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_lua_v3.Lua{
-					DefaultSourceCode: &envoy_config_core_v3.DataSource{
-						Specifier: &envoy_config_core_v3.DataSource_InlineString{
-							InlineString: "-- Placeholder for per-Route or per-Cluster overrides.",
+					SourceCodes: map[string]*envoy_config_core_v3.DataSource{
+						cookieRewriteScriptName: {
+							Specifier: &envoy_config_core_v3.DataSource_InlineString{
+								InlineString: cookieRewriteScript,
+							},
 						},
 					},
 				}),
@@ -791,28 +807,12 @@ func FilterChains(filters ...*envoy_config_listener_v3.Filter) []*envoy_config_l
 	}
 }
 
-func FilterMisdirectedRequests(fqdn string) *envoy_filter_network_http_connection_manager_v3.HttpFilter {
-	var target string
-
-	// fqdn can be "*" to match all hostnames or a wildcard prefix
-	// e.g. "*.foo"
-	if strings.HasPrefix(fqdn, "*") {
-		// When we have a wildcard hostname, we will have already matched
-		// the filter chain on an SNI that falls under the wildcard so we
-		// retrieve that and make sure the :authority header matches.
-		// See: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/lua_filter#requestedservername
-		target = "request_handle:streamInfo():requestedServerName()"
-	} else {
-		// For specific hostnames we know the SNI we need to match the
-		// :authority header against so we can simplify the code.
-		target = `"` + strings.ToLower(fqdn) + `"`
-	}
-
+func FilterMisdirectedRequests() *envoy_filter_network_http_connection_manager_v3.HttpFilter {
 	code := `
 function envoy_on_request(request_handle)
 	local headers = request_handle:headers()
 	local host = string.lower(headers:get(":authority"))
-	local target = %s
+	local target = request_handle:streamInfo():requestedServerName()
 
 	s, e = string.find(host, ":", 1, true)
 	if s ~= nil then
@@ -834,7 +834,7 @@ end
 			TypedConfig: protobuf.MustMarshalAny(&envoy_filter_http_lua_v3.Lua{
 				DefaultSourceCode: &envoy_config_core_v3.DataSource{
 					Specifier: &envoy_config_core_v3.DataSource_InlineString{
-						InlineString: fmt.Sprintf(code, target),
+						InlineString: code,
 					},
 				},
 			}),
@@ -907,13 +907,50 @@ func FilterExtProc(extProc *dag.ExtProc) *envoy_filter_network_http_connection_m
 	}
 }
 
+// ExternalAuthzAllowedHeaders returns the slice of StringMatcher for a given slice of HeaderNameMatchCondition.
+func ExternalAuthzAllowedHeaders(allowedHeaders []dag.HeaderNameMatchCondition) []*envoy_matcher_v3.StringMatcher {
+	var allowedHeaderPatterns []*envoy_matcher_v3.StringMatcher
+
+	for _, allowedHeader := range allowedHeaders {
+		switch allowedHeader.MatchType {
+		case dag.HeaderNameMatchTypeExact:
+			allowedHeaderPatterns = append(allowedHeaderPatterns, &envoy_matcher_v3.StringMatcher{
+				MatchPattern: &envoy_matcher_v3.StringMatcher_Exact{
+					Exact: allowedHeader.Value,
+				},
+				IgnoreCase: allowedHeader.IgnoreCase,
+			})
+		case dag.HeaderNameMatchTypePrefix:
+			allowedHeaderPatterns = append(allowedHeaderPatterns, &envoy_matcher_v3.StringMatcher{
+				MatchPattern: &envoy_matcher_v3.StringMatcher_Prefix{
+					Prefix: allowedHeader.Value,
+				},
+				IgnoreCase: allowedHeader.IgnoreCase,
+			})
+		case dag.HeaderNameMatchTypeSuffix:
+			allowedHeaderPatterns = append(allowedHeaderPatterns, &envoy_matcher_v3.StringMatcher{
+				MatchPattern: &envoy_matcher_v3.StringMatcher_Suffix{
+					Suffix: allowedHeader.Value,
+				},
+				IgnoreCase: allowedHeader.IgnoreCase,
+			})
+		case dag.HeaderNameMatchTypeContains:
+			allowedHeaderPatterns = append(allowedHeaderPatterns, &envoy_matcher_v3.StringMatcher{
+				MatchPattern: &envoy_matcher_v3.StringMatcher_Contains{
+					Contains: allowedHeader.Value,
+				},
+				IgnoreCase: allowedHeader.IgnoreCase,
+			})
+		}
+	}
+
+	return allowedHeaderPatterns
+}
+
 // FilterExternalAuthz returns an `ext_authz` filter configured with the
 // requested parameters.
 func FilterExternalAuthz(externalAuthorization *dag.ExternalAuthorization) *envoy_filter_network_http_connection_manager_v3.HttpFilter {
 	authConfig := envoy_filter_http_ext_authz_v3.ExtAuthz{
-		Services: &envoy_filter_http_ext_authz_v3.ExtAuthz_GrpcService{
-			GrpcService: grpcService(externalAuthorization.AuthorizationService.Name, externalAuthorization.AuthorizationService.SNI, externalAuthorization.AuthorizationResponseTimeout),
-		},
 		// Pretty sure we always want this. Why have an
 		// external auth service if it is not going to affect
 		// routing decisions?
@@ -922,11 +959,53 @@ func FilterExternalAuthz(externalAuthorization *dag.ExternalAuthorization) *envo
 		StatusOnError: &envoy_type_v3.HttpStatus{
 			Code: envoy_type_v3.StatusCode_Forbidden,
 		},
-		MetadataContextNamespaces: []string{},
-		IncludePeerCertificate:    true,
 		// TODO(jpeach): When we move to the Envoy v4 API, propagate the
 		// `transport_api_version` from ExtensionServiceSpec ProtocolVersion.
-		TransportApiVersion: envoy_config_core_v3.ApiVersion_V3,
+		TransportApiVersion:    envoy_config_core_v3.ApiVersion_V3,
+		IncludePeerCertificate: true,
+	}
+
+	switch externalAuthorization.ServiceAPIType {
+	case dag.AuthorizationServiceGRPC:
+		authConfig.Services = &envoy_filter_http_ext_authz_v3.ExtAuthz_GrpcService{
+			GrpcService: grpcService(externalAuthorization.AuthorizationService.Name, externalAuthorization.AuthorizationService.SNI, externalAuthorization.AuthorizationResponseTimeout),
+		}
+		authConfig.MetadataContextNamespaces = []string{}
+
+	case dag.AuthorizationServiceHTTP:
+		extAuthzService := &envoy_filter_http_ext_authz_v3.ExtAuthz_HttpService{
+			HttpService: &envoy_filter_http_ext_authz_v3.HttpService{
+				ServerUri: &envoy_config_core_v3.HttpUri{
+					// Uri is required by the Envoy API but routing is determined by the Cluster field,
+					// so we use a dummy value here.
+					Uri: "http://dummy/",
+					HttpUpstreamType: &envoy_config_core_v3.HttpUri_Cluster{
+						Cluster: externalAuthorization.AuthorizationService.Name,
+					},
+					Timeout: httpURITimeout(externalAuthorization.AuthorizationResponseTimeout),
+				},
+			},
+		}
+
+		if pathPrefix := externalAuthorization.HTTPPathPrefix; pathPrefix != "" {
+			extAuthzService.HttpService.PathPrefix = pathPrefix
+		}
+
+		if len(externalAuthorization.HTTPAllowedAuthorizationHeaders) > 0 {
+			authConfig.AllowedHeaders = &envoy_matcher_v3.ListStringMatcher{
+				Patterns: ExternalAuthzAllowedHeaders(externalAuthorization.HTTPAllowedAuthorizationHeaders),
+			}
+		}
+
+		if len(externalAuthorization.HTTPAllowedUpstreamHeaders) > 0 {
+			extAuthzService.HttpService.AuthorizationResponse = &envoy_filter_http_ext_authz_v3.AuthorizationResponse{
+				AllowedUpstreamHeaders: &envoy_matcher_v3.ListStringMatcher{
+					Patterns: ExternalAuthzAllowedHeaders(externalAuthorization.HTTPAllowedUpstreamHeaders),
+				},
+			}
+		}
+
+		authConfig.Services = extAuthzService
 	}
 
 	if externalAuthorization.AuthorizationServerWithRequestBody != nil {
@@ -958,16 +1037,27 @@ func FilterJWTAuthN(jwtProviders []dag.JWTProvider) *envoy_filter_network_http_c
 	}
 
 	for _, provider := range jwtProviders {
-		provider := provider
-		var cacheDuration *durationpb.Duration
-		if provider.RemoteJWKS.CacheDuration != nil {
-			cacheDuration = durationpb.New(*provider.RemoteJWKS.CacheDuration)
-		}
-
-		jwtConfig.Providers[provider.Name] = &envoy_filter_http_jwt_authn_v3.JwtProvider{
+		envProv := &envoy_filter_http_jwt_authn_v3.JwtProvider{
 			Issuer:    provider.Issuer,
 			Audiences: provider.Audiences,
-			JwksSourceSpecifier: &envoy_filter_http_jwt_authn_v3.JwtProvider_RemoteJwks{
+			Forward:   provider.ForwardJWT,
+		}
+
+		switch {
+		case provider.LocalJWKS != nil:
+			envProv.JwksSourceSpecifier = &envoy_filter_http_jwt_authn_v3.JwtProvider_LocalJwks{
+				LocalJwks: &envoy_config_core_v3.DataSource{
+					Specifier: &envoy_config_core_v3.DataSource_InlineString{
+						InlineString: string(provider.LocalJWKS.JWKS),
+					},
+				},
+			}
+		case provider.RemoteJWKS != nil:
+			var cacheDuration *durationpb.Duration
+			if provider.RemoteJWKS.CacheDuration != nil {
+				cacheDuration = durationpb.New(*provider.RemoteJWKS.CacheDuration)
+			}
+			envProv.JwksSourceSpecifier = &envoy_filter_http_jwt_authn_v3.JwtProvider_RemoteJwks{
 				RemoteJwks: &envoy_filter_http_jwt_authn_v3.RemoteJwks{
 					HttpUri: &envoy_config_core_v3.HttpUri{
 						Uri: provider.RemoteJWKS.URI,
@@ -978,9 +1068,20 @@ func FilterJWTAuthN(jwtProviders []dag.JWTProvider) *envoy_filter_network_http_c
 					},
 					CacheDuration: cacheDuration,
 				},
-			},
-			Forward: provider.ForwardJWT,
+			}
+		default:
+			// Programming error: should never happen because the DAG should have rejected it.
+			// Fail closed by providing an empty JWKS that will reject all tokens.
+			envProv.JwksSourceSpecifier = &envoy_filter_http_jwt_authn_v3.JwtProvider_LocalJwks{
+				LocalJwks: &envoy_config_core_v3.DataSource{
+					Specifier: &envoy_config_core_v3.DataSource_InlineString{
+						InlineString: `{"keys":[]}`,
+					},
+				},
+			}
 		}
+
+		jwtConfig.Providers[provider.Name] = envProv
 
 		// Set up a requirement map so that per-route filter config can refer
 		// to a requirement by name. This is nicer than specifying rules here,
@@ -1043,6 +1144,15 @@ func FilterChainTLSFallback(downstream *envoy_transport_socket_tls_v3.Downstream
 		fc.TransportSocket = DownstreamTLSTransportSocket(downstream)
 	}
 	return fc
+}
+
+// httpURITimeout returns a duration for the HttpUri.Timeout field.
+// It returns 0 (infinite) if the timeout is not set.
+func httpURITimeout(d timeout.Setting) *durationpb.Duration {
+	if t := envoy.Timeout(d); t != nil {
+		return t
+	}
+	return durationpb.New(0)
 }
 
 // grpcService returns a envoy_config_core_v3.GrpcService for the given parameters.

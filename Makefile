@@ -40,7 +40,7 @@ endif
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Base build image to use.
-BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.25.1
+BUILD_BASE_IMAGE ?= m.daocloud.io/docker.io/library/golang:1.26.4@sha256:68cb6d68bed024785b69195b89af7ac7a444f27791435f98647edff595aa0479
 
 # Enable build with CGO.
 BUILD_CGO_ENABLED ?= 0
@@ -134,9 +134,9 @@ multiarch-build:
 		--build-arg "BUILD_CGO_ENABLED=$(BUILD_CGO_ENABLED)" \
 		--build-arg "BUILD_EXTRA_GO_LDFLAGS=$(BUILD_EXTRA_GO_LDFLAGS)" \
 		--build-arg "BUILD_GOEXPERIMENT=$(BUILD_GOEXPERIMENT)" \
-		--label "commit.sync.upstream=3e57486" \
+		--label "commit.sync.upstream=da87188" \
 		$(DOCKER_BUILD_LABELS) \
-		-t release-ci.daocloud.io/skoala/contour:v1.30.0-3e57486  \
+		-t release-ci.daocloud.io/skoala/contour:v1.33.5-da87188  \
 		$(shell pwd) \
 		--push
 
@@ -223,9 +223,9 @@ lint-flags:
 .PHONY: format
 format: ## Run gofumpt to format the codebase.
 	@echo Running gofumpt...
-	@go run mvdan.cc/gofumpt@v0.5.0 -l -w -extra .
+	@go tool -modfile=tools/go.mod mvdan.cc/gofumpt -l -w -extra .
 	@echo Running gci...
-	@go run github.com/daixiang0/gci@v0.12.1 write . --skip-generated -s standard -s default -s "prefix(github.com/projectcontour/contour)" --custom-order
+	@go tool -modfile=tools/go.mod github.com/daixiang0/gci write . --skip-generated -s standard -s default -s "prefix(github.com/projectcontour/contour)" --custom-order
 
 .PHONY: generate
 generate: ## Re-generate generated code and documentation
@@ -273,7 +273,7 @@ generate-metrics-docs:
 .PHONY: generate-go
 generate-go:
 	@echo "Generating mocks..."
-	@go run github.com/vektra/mockery/v2
+	@go tool -modfile=tools/go.mod github.com/vektra/mockery/v2
 
 .PHONY: check-generate
 check-generate: generate
@@ -328,7 +328,7 @@ e2e: | setup-kind-cluster load-contour-image-kind run-e2e cleanup-kind ## Run E2
 run-e2e:
 	CONTOUR_E2E_LOCAL_HOST=$(CONTOUR_E2E_LOCAL_HOST) \
 	CONTOUR_E2E_IMAGE=$(CONTOUR_E2E_IMAGE) \
-	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -skip-package=upgrade,bench -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(CONTOUR_E2E_TEST_FOCUS)' -r $(CONTOUR_E2E_PACKAGE_FOCUS)
+	go tool -modfile=tools/go.mod github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -skip-package=upgrade,bench -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(CONTOUR_E2E_TEST_FOCUS)' -r $(CONTOUR_E2E_PACKAGE_FOCUS)
 
 .PHONY: cleanup-kind
 cleanup-kind:
@@ -352,7 +352,7 @@ upgrade: | setup-kind-cluster load-contour-image-kind run-upgrade cleanup-kind #
 run-upgrade:
 	CONTOUR_UPGRADE_FROM_VERSION=$(CONTOUR_UPGRADE_FROM_VERSION) \
 		CONTOUR_E2E_IMAGE=$(CONTOUR_E2E_IMAGE) \
-		go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -randomize-all -poll-progress-after=300s -v ./test/e2e/upgrade
+		go tool -modfile=tools/go.mod github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -randomize-all -poll-progress-after=300s -v ./test/e2e/upgrade
 
 .PHONY: check-ingress-conformance
 check-ingress-conformance: | install-contour-working run-ingress-conformance cleanup-kind ## Run Ingress controller conformance
@@ -378,7 +378,7 @@ teardown-gcp-bench-cluster:
 
 .PHONY: run-bench
 run-bench:
-	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=4h -timeout=5h -r -v ./test/e2e/bench
+	go tool -modfile=tools/go.mod github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=4h -timeout=5h -r -v ./test/e2e/bench
 
 .PHONY: bench
 bench: deploy-gcp-bench-cluster run-bench teardown-gcp-bench-cluster
