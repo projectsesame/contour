@@ -163,6 +163,35 @@ func (hc *HeaderMatchCondition) String() string {
 	return "header: " + details
 }
 
+// AuthorizationServiceType defines whether the external authorization server
+// uses HTTP or gRPC protocol.
+type AuthorizationServiceType int
+
+const (
+	// AuthorizationServiceGRPC indicates the server implements the gRPC ext_authz protocol.
+	AuthorizationServiceGRPC AuthorizationServiceType = iota
+	// AuthorizationServiceHTTP indicates the server implements the raw HTTP ext_authz protocol.
+	AuthorizationServiceHTTP
+)
+
+const (
+	// HeaderNameMatchTypeExact matches a header name exactly.
+	HeaderNameMatchTypeExact = "exact"
+	// HeaderNameMatchTypePrefix matches a header name by prefix.
+	HeaderNameMatchTypePrefix = "prefix"
+	// HeaderNameMatchTypeSuffix matches a header name by suffix.
+	HeaderNameMatchTypeSuffix = "suffix"
+	// HeaderNameMatchTypeContains matches a header name if it contains the provided value.
+	HeaderNameMatchTypeContains = "contains"
+)
+
+// HeaderNameMatchCondition matches an HTTP header name by MatchType.
+type HeaderNameMatchCondition struct {
+	MatchType  string
+	Value      string
+	IgnoreCase bool
+}
+
 const (
 	// QueryParamMatchTypeExact matches a querystring parameter value exactly.
 	QueryParamMatchTypeExact = "exact"
@@ -495,13 +524,10 @@ type HeadersPolicy struct {
 // CookieRewritePolicy defines how attributes of an HTTP Set-Cookie header
 // can be rewritten.
 type CookieRewritePolicy struct {
-	Name   string
-	Path   *string
-	Domain *string
-	// Using an uint since pointer to boolean gets dereferenced in golang
-	// text templates so we have no way of distinguishing if unset or set to false.
-	// 0 means unset, 1 means false, 2 means true
-	Secure   uint
+	Name     string
+	Path     *string
+	Domain   *string
+	Secure   *bool
 	SameSite *string
 }
 
@@ -849,7 +875,8 @@ type JWTProvider struct {
 	Name       string
 	Issuer     string
 	Audiences  []string
-	RemoteJWKS RemoteJWKS
+	RemoteJWKS *RemoteJWKS
+	LocalJWKS  *LocalJWKS
 	ForwardJWT bool
 }
 
@@ -858,6 +885,10 @@ type RemoteJWKS struct {
 	Timeout       time.Duration
 	Cluster       DNSNameCluster
 	CacheDuration *time.Duration
+}
+
+type LocalJWKS struct {
+	JWKS []byte
 }
 
 // DNSNameCluster is a cluster that routes directly to a DNS
@@ -890,6 +921,28 @@ type IPFilterRule struct {
 // ExternalAuthorization contains the configuration for enabling
 // the ExtAuthz filter.
 type ExternalAuthorization struct {
+	// ServiceAPIType defines the external authorization service API type.
+	// It indicates the protocol implemented by the external server, specifying whether it's a raw HTTP authorization server
+	// or a gRPC authorization server.
+	ServiceAPIType AuthorizationServiceType
+
+	// Note that in addition to the user’s supplied matchers, Host, Method, Path, Content-Length, and Authorization are additionally included in the list.
+	HTTPAllowedAuthorizationHeaders []HeaderNameMatchCondition
+
+	// HTTPAllowedUpstreamHeaders specifies authorization response headers that will be added to the original client request.
+	// Note that coexistent headers will be overridden.
+	HTTPAllowedUpstreamHeaders []HeaderNameMatchCondition
+
+	// HTTPPathPrefix Sets a prefix to the value of authorization request header Path.
+	HTTPPathPrefix string
+
+	// Note: This field is not used by Envoy
+	// https://github.com/envoyproxy/envoy/issues/5357
+	//
+	// HttpServerURI sets the URI of the external HTTP authorization server to which authorization requests must be sent.
+	// Only required for http services.
+	// HttpServerURI string
+
 	// AuthorizationService points to the extension that client
 	// requests are forwarded to for authorization. If nil, no
 	// authorization is enabled for this host.
@@ -1213,13 +1266,14 @@ func (s *ServiceCluster) Rebalance() {
 	}
 }
 
-// Secret represents a K8s Secret for TLS usage as a DAG Vertex. A Secret is
+// Secret represents a K8s Secret as a DAG Vertex. A Secret is
 // a leaf in the DAG.
 type Secret struct {
-	Object         *core_v1.Secret
-	ValidTLSSecret *SecretValidationStatus
-	ValidCASecret  *SecretValidationStatus
-	ValidCRLSecret *SecretValidationStatus
+	Object          *core_v1.Secret
+	ValidTLSSecret  *SecretValidationStatus
+	ValidCASecret   *SecretValidationStatus
+	ValidCRLSecret  *SecretValidationStatus
+	ValidJWKSSecret map[string]*SecretValidationStatus
 }
 
 func (s *Secret) Name() string      { return s.Object.Name }

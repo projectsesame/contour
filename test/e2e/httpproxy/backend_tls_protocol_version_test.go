@@ -16,41 +16,27 @@
 package httpproxy
 
 import (
-	"context"
+	"crypto/x509"
 	"encoding/json"
 
-	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	certmanagermetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tsaarni/certyaml"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	contour_v1 "github.com/projectcontour/contour/apis/projectcontour/v1"
 	"github.com/projectcontour/contour/test/e2e"
 )
 
-func testBackendTLSProtocolVersion(namespace, protocolVersion string) {
+func testBackendTLSProtocolVersion(namespace, protocolVersion string, ca func() *certyaml.Certificate) {
 	Specify("backend connection uses configured TLS version", func() {
-		// Backend server cert signed by CA.
-		backendServerCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "backend-server-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				CommonName: "echo-secure",
-				DNSNames:   []string{"echo-secure"},
-				SecretName: "backend-server-cert",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-issuer",
-				},
-			},
-		}
-		require.NoError(f.T(), f.Client.Create(context.TODO(), backendServerCert))
+		f.Certs.CreateCertificate(namespace, "backend-server-cert", &certyaml.Certificate{
+			Subject:         "cn=echo-secure",
+			SubjectAltNames: []string{"DNS:echo-secure"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          ca(),
+		})
 		f.Fixtures.EchoSecure.Deploy(namespace, "echo-secure", nil)
 
 		p := &contour_v1.HTTPProxy{

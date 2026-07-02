@@ -39,10 +39,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: contourconfigurations.projectcontour.io
 spec:
-  preserveUnknownFields: false
   group: projectcontour.io
   names:
     kind: ContourConfiguration
@@ -478,6 +477,22 @@ spec:
                             items:
                               type: string
                             type: array
+                          fingerprint:
+                            description: |-
+                              Fingerprint defines TLS fingerprinting configuration
+                              for the TLS Inspector listener filter.
+                            properties:
+                              ja3:
+                                description: |-
+                                  JA3 enables JA3 fingerprinting in the TLS Inspector.
+                                  When true, populates JA3 hash in dynamic metadata.
+                                type: boolean
+                              ja4:
+                                description: |-
+                                  JA4 enables JA4 fingerprinting in the TLS Inspector.
+                                  When true, populates JA4 hash in dynamic metadata.
+                                type: boolean
+                            type: object
                           maximumProtocolVersion:
                             description: |-
                               MaximumProtocolVersion is the maximum TLS version this vhost should
@@ -767,6 +782,91 @@ spec:
                       set in most cases. It is intended for use only while migrating applications
                       from internal authorization to Contour external authorization.
                     type: boolean
+                  httpSettings:
+                    description: HTTPAuthorizationServerSettings defines configurations
+                      for interacting with an external HTTP authorization server.
+                    properties:
+                      allowedAuthorizationHeaders:
+                        description: |-
+                          AllowedAuthorizationHeaders specifies client request headers that will be sent to the authorization server.
+                          Host, Method, Path, Content-Length, and Authorization headers are additionally included in the list.
+                        items:
+                          description: |-
+                            HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                            in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                            experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                          properties:
+                            contains:
+                              description: Contains specifies a substring that must
+                                be present in the header name.
+                              type: string
+                            exact:
+                              description: Exact specifies a string that the header
+                                name must be equal to.
+                              type: string
+                            ignoreCase:
+                              description: IgnoreCase specifies whether string matching
+                                should be case-insensitive.
+                              type: boolean
+                            prefix:
+                              description: Prefix defines a prefix match for the header
+                                name.
+                              type: string
+                            suffix:
+                              description: Suffix defines a suffix match for a header
+                                name.
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: only one of prefix, suffix, exact, and contains
+                              should be set in the allowedHeader
+                            rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix) ?
+                              1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                              ? 1 : 0) == 1'
+                        type: array
+                      allowedUpstreamHeaders:
+                        description: |-
+                          AllowedUpstreamHeaders specifies response headers from the authorization server
+                          that may be added to the original client request before sending it to the upstream.
+                        items:
+                          description: |-
+                            HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                            in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                            experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                          properties:
+                            contains:
+                              description: Contains specifies a substring that must
+                                be present in the header name.
+                              type: string
+                            exact:
+                              description: Exact specifies a string that the header
+                                name must be equal to.
+                              type: string
+                            ignoreCase:
+                              description: IgnoreCase specifies whether string matching
+                                should be case-insensitive.
+                              type: boolean
+                            prefix:
+                              description: Prefix defines a prefix match for the header
+                                name.
+                              type: string
+                            suffix:
+                              description: Suffix defines a suffix match for a header
+                                name.
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: only one of prefix, suffix, exact, and contains
+                              should be set in the allowedHeader
+                            rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix) ?
+                              1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                              ? 1 : 0) == 1'
+                        type: array
+                      pathPrefix:
+                        description: PathPrefix Sets a prefix to the value of authorization
+                          request header Path.
+                        type: string
+                    type: object
                   responseTimeout:
                     description: |-
                       ResponseTimeout configures maximum time to wait for a check response from the authorization server.
@@ -774,6 +874,15 @@ spec:
                       Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
                       The string "infinity" is also a valid input and specifies no timeout.
                     pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                    type: string
+                  serviceType:
+                    default: grpc
+                    description: |-
+                      ServiceType sets the protocol used to communicate with
+                      the external authorization server.
+                    enum:
+                    - http
+                    - grpc
                     type: string
                   withRequestBody:
                     description: WithRequestBody specifies configuration for sending
@@ -796,6 +905,9 @@ spec:
                         type: boolean
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: httpSettings can only be set when serviceType is 'http'
+                  rule: '!has(self.httpSettings) || self.serviceType == ''http'''
               globalExternalProcessing:
                 description: |-
                   GlobalExternalProcessing allows envoys external processing filter
@@ -1380,6 +1492,11 @@ spec:
                 description: Tracing defines properties for exporting trace data to
                   OpenTelemetry.
                 properties:
+                  clientSampling:
+                    description: |-
+                      ClientSampling defines the sampling rate when x-client-trace-id header is set.
+                      contour's default is 100.
+                    type: string
                   customTags:
                     description: CustomTags defines a list of custom tags with unique
                       tag name.
@@ -1435,6 +1552,11 @@ spec:
                   overallSampling:
                     description: |-
                       OverallSampling defines the sampling rate of trace data.
+                      contour's default is 100.
+                    type: string
+                  randomSampling:
+                    description: |-
+                      RandomSampling defines the random sampling rate for all requests.
                       contour's default is 100.
                     type: string
                   serviceName:
@@ -1688,10 +1810,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: contourdeployments.projectcontour.io
 spec:
-  preserveUnknownFields: false
   group: projectcontour.io
   names:
     kind: ContourDeployment
@@ -1868,9 +1989,10 @@ spec:
                             operator:
                               description: |-
                                 Operator represents a key's relationship to the value.
-                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                 Exists is equivalent to wildcard for value, so that a pod can
                                 tolerate all taints of a particular category.
+                                Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                               type: string
                             tolerationSeconds:
                               description: |-
@@ -2776,7 +2898,7 @@ spec:
                                     resources:
                                       description: |-
                                         resources represents the minimum resources the volume should have.
-                                        If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                                        Users are allowed to specify resource requirements
                                         that are lower than previous value but must still be higher than capacity recorded in the
                                         status field of the claim.
                                         More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -3106,7 +3228,7 @@ spec:
                             A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
                             The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
                             The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                            The volume will be mounted read-only (ro) and non-executable files (noexec).
+                            The volume will be mounted read-only (ro).
                             Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
                             The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                           properties:
@@ -3278,8 +3400,7 @@ spec:
                           description: |-
                             portworxVolume represents a portworx volume attached and mounted on kubelets host machine.
                             Deprecated: PortworxVolume is deprecated. All operations for the in-tree portworxVolume type
-                            are redirected to the pxd.portworx.com CSI driver when the CSIMigrationPortworx feature-gate
-                            is on.
+                            are redirected to the pxd.portworx.com CSI driver.
                           properties:
                             fsType:
                               description: |-
@@ -3637,6 +3758,21 @@ spec:
                                         description: Kubelet's generated CSRs will
                                           be addressed to this signer.
                                         type: string
+                                      userAnnotations:
+                                        additionalProperties:
+                                          type: string
+                                        description: |-
+                                          userAnnotations allow pod authors to pass additional information to
+                                          the signer implementation.  Kubernetes does not restrict or validate this
+                                          metadata in any way.
+                                          These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
+                                          the PodCertificateRequest objects that Kubelet creates.
+                                          Entries are subject to the same validation as object metadata annotations,
+                                          with the addition that all keys must be domain-prefixed. No restrictions
+                                          are placed on values, except an overall size limitation on the entire field.
+                                          Signers should document the keys and values they support. Signers should
+                                          deny requests that contain keys they do not recognize.
+                                        type: object
                                     required:
                                     - keyType
                                     - signerName
@@ -4156,9 +4292,10 @@ spec:
                             operator:
                               description: |-
                                 Operator represents a key's relationship to the value.
-                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                 Exists is equivalent to wildcard for value, so that a pod can
                                 tolerate all taints of a particular category.
+                                Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                               type: string
                             tolerationSeconds:
                               description: |-
@@ -4697,6 +4834,22 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              fingerprint:
+                                description: |-
+                                  Fingerprint defines TLS fingerprinting configuration
+                                  for the TLS Inspector listener filter.
+                                properties:
+                                  ja3:
+                                    description: |-
+                                      JA3 enables JA3 fingerprinting in the TLS Inspector.
+                                      When true, populates JA3 hash in dynamic metadata.
+                                    type: boolean
+                                  ja4:
+                                    description: |-
+                                      JA4 enables JA4 fingerprinting in the TLS Inspector.
+                                      When true, populates JA4 hash in dynamic metadata.
+                                    type: boolean
+                                type: object
                               maximumProtocolVersion:
                                 description: |-
                                   MaximumProtocolVersion is the maximum TLS version this vhost should
@@ -4987,6 +5140,91 @@ spec:
                           set in most cases. It is intended for use only while migrating applications
                           from internal authorization to Contour external authorization.
                         type: boolean
+                      httpSettings:
+                        description: HTTPAuthorizationServerSettings defines configurations
+                          for interacting with an external HTTP authorization server.
+                        properties:
+                          allowedAuthorizationHeaders:
+                            description: |-
+                              AllowedAuthorizationHeaders specifies client request headers that will be sent to the authorization server.
+                              Host, Method, Path, Content-Length, and Authorization headers are additionally included in the list.
+                            items:
+                              description: |-
+                                HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                                in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                                experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                              properties:
+                                contains:
+                                  description: Contains specifies a substring that
+                                    must be present in the header name.
+                                  type: string
+                                exact:
+                                  description: Exact specifies a string that the header
+                                    name must be equal to.
+                                  type: string
+                                ignoreCase:
+                                  description: IgnoreCase specifies whether string
+                                    matching should be case-insensitive.
+                                  type: boolean
+                                prefix:
+                                  description: Prefix defines a prefix match for the
+                                    header name.
+                                  type: string
+                                suffix:
+                                  description: Suffix defines a suffix match for a
+                                    header name.
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: only one of prefix, suffix, exact, and contains
+                                  should be set in the allowedHeader
+                                rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix)
+                                  ? 1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                                  ? 1 : 0) == 1'
+                            type: array
+                          allowedUpstreamHeaders:
+                            description: |-
+                              AllowedUpstreamHeaders specifies response headers from the authorization server
+                              that may be added to the original client request before sending it to the upstream.
+                            items:
+                              description: |-
+                                HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                                in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                                experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                              properties:
+                                contains:
+                                  description: Contains specifies a substring that
+                                    must be present in the header name.
+                                  type: string
+                                exact:
+                                  description: Exact specifies a string that the header
+                                    name must be equal to.
+                                  type: string
+                                ignoreCase:
+                                  description: IgnoreCase specifies whether string
+                                    matching should be case-insensitive.
+                                  type: boolean
+                                prefix:
+                                  description: Prefix defines a prefix match for the
+                                    header name.
+                                  type: string
+                                suffix:
+                                  description: Suffix defines a suffix match for a
+                                    header name.
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: only one of prefix, suffix, exact, and contains
+                                  should be set in the allowedHeader
+                                rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix)
+                                  ? 1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                                  ? 1 : 0) == 1'
+                            type: array
+                          pathPrefix:
+                            description: PathPrefix Sets a prefix to the value of
+                              authorization request header Path.
+                            type: string
+                        type: object
                       responseTimeout:
                         description: |-
                           ResponseTimeout configures maximum time to wait for a check response from the authorization server.
@@ -4994,6 +5232,15 @@ spec:
                           Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
                           The string "infinity" is also a valid input and specifies no timeout.
                         pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                        type: string
+                      serviceType:
+                        default: grpc
+                        description: |-
+                          ServiceType sets the protocol used to communicate with
+                          the external authorization server.
+                        enum:
+                        - http
+                        - grpc
                         type: string
                       withRequestBody:
                         description: WithRequestBody specifies configuration for sending
@@ -5016,6 +5263,9 @@ spec:
                             type: boolean
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: httpSettings can only be set when serviceType is 'http'
+                      rule: '!has(self.httpSettings) || self.serviceType == ''http'''
                   globalExternalProcessing:
                     description: |-
                       GlobalExternalProcessing allows envoys external processing filter
@@ -5601,6 +5851,11 @@ spec:
                     description: Tracing defines properties for exporting trace data
                       to OpenTelemetry.
                     properties:
+                      clientSampling:
+                        description: |-
+                          ClientSampling defines the sampling rate when x-client-trace-id header is set.
+                          contour's default is 100.
+                        type: string
                       customTags:
                         description: CustomTags defines a list of custom tags with
                           unique tag name.
@@ -5657,6 +5912,11 @@ spec:
                       overallSampling:
                         description: |-
                           OverallSampling defines the sampling rate of trace data.
+                          contour's default is 100.
+                        type: string
+                      randomSampling:
+                        description: |-
+                          RandomSampling defines the random sampling rate for all requests.
                           contour's default is 100.
                         type: string
                       serviceName:
@@ -5778,10 +6038,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: extensionservices.projectcontour.io
 spec:
-  preserveUnknownFields: false
   group: projectcontour.io
   names:
     kind: ExtensionService
@@ -5858,9 +6117,9 @@ spec:
                 type: object
               loadBalancerPolicy:
                 description: |-
-                  The policy for load balancing GRPC service requests. Note that the
+                  The policy for load balancing service requests. Note that the
                   `Cookie` and `RequestHash` load balancing strategies cannot be used
-                  here.
+                  here for GRPC service requests.
                 properties:
                   requestHashPolicies:
                     description: |-
@@ -5934,8 +6193,9 @@ spec:
               protocol:
                 description: |-
                   Protocol may be used to specify (or override) the protocol used to reach this Service.
-                  Values may be h2 or h2c. If omitted, protocol-selection falls back on Service annotations.
+                  Values may be h2, h2c or http/1.1. If omitted, protocol-selection falls back on Service annotations.
                 enum:
+                - http/1.1
                 - h2
                 - h2c
                 type: string
@@ -5951,7 +6211,7 @@ spec:
               services:
                 description: |-
                   Services specifies the set of Kubernetes Service resources that
-                  receive GRPC extension API requests.
+                  receive extension API requests.
                   If no weights are specified for any of the entries in
                   this array, traffic will be spread evenly across all the
                   services.
@@ -6258,10 +6518,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: httpproxies.projectcontour.io
 spec:
-  preserveUnknownFields: false
   group: projectcontour.io
   names:
     kind: HTTPProxy
@@ -8532,6 +8791,91 @@ spec:
                           set in most cases. It is intended for use only while migrating applications
                           from internal authorization to Contour external authorization.
                         type: boolean
+                      httpSettings:
+                        description: HTTPAuthorizationServerSettings defines configurations
+                          for interacting with an external HTTP authorization server.
+                        properties:
+                          allowedAuthorizationHeaders:
+                            description: |-
+                              AllowedAuthorizationHeaders specifies client request headers that will be sent to the authorization server.
+                              Host, Method, Path, Content-Length, and Authorization headers are additionally included in the list.
+                            items:
+                              description: |-
+                                HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                                in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                                experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                              properties:
+                                contains:
+                                  description: Contains specifies a substring that
+                                    must be present in the header name.
+                                  type: string
+                                exact:
+                                  description: Exact specifies a string that the header
+                                    name must be equal to.
+                                  type: string
+                                ignoreCase:
+                                  description: IgnoreCase specifies whether string
+                                    matching should be case-insensitive.
+                                  type: boolean
+                                prefix:
+                                  description: Prefix defines a prefix match for the
+                                    header name.
+                                  type: string
+                                suffix:
+                                  description: Suffix defines a suffix match for a
+                                    header name.
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: only one of prefix, suffix, exact, and contains
+                                  should be set in the allowedHeader
+                                rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix)
+                                  ? 1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                                  ? 1 : 0) == 1'
+                            type: array
+                          allowedUpstreamHeaders:
+                            description: |-
+                              AllowedUpstreamHeaders specifies response headers from the authorization server
+                              that may be added to the original client request before sending it to the upstream.
+                            items:
+                              description: |-
+                                HTTPAuthorizationServerAllowedHeaders specifies how to conditionally match against allowed headers
+                                in the context of HTTP authorization. Regex support is intentionally excluded to simplify the user
+                                experience and prevent potential issues. Only one of Prefix, Exact, Suffix or Contains must be provided.
+                              properties:
+                                contains:
+                                  description: Contains specifies a substring that
+                                    must be present in the header name.
+                                  type: string
+                                exact:
+                                  description: Exact specifies a string that the header
+                                    name must be equal to.
+                                  type: string
+                                ignoreCase:
+                                  description: IgnoreCase specifies whether string
+                                    matching should be case-insensitive.
+                                  type: boolean
+                                prefix:
+                                  description: Prefix defines a prefix match for the
+                                    header name.
+                                  type: string
+                                suffix:
+                                  description: Suffix defines a suffix match for a
+                                    header name.
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: only one of prefix, suffix, exact, and contains
+                                  should be set in the allowedHeader
+                                rule: '(has(self.exact) ? 1 : 0) + (has(self.prefix)
+                                  ? 1 : 0) + (has(self.suffix) ? 1 : 0) + (has(self.contains)
+                                  ? 1 : 0) == 1'
+                            type: array
+                          pathPrefix:
+                            description: PathPrefix Sets a prefix to the value of
+                              authorization request header Path.
+                            type: string
+                        type: object
                       responseTimeout:
                         description: |-
                           ResponseTimeout configures maximum time to wait for a check response from the authorization server.
@@ -8539,6 +8883,15 @@ spec:
                           Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
                           The string "infinity" is also a valid input and specifies no timeout.
                         pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
+                        type: string
+                      serviceType:
+                        default: grpc
+                        description: |-
+                          ServiceType sets the protocol used to communicate with
+                          the external authorization server.
+                        enum:
+                        - http
+                        - grpc
                         type: string
                       withRequestBody:
                         description: WithRequestBody specifies configuration for sending
@@ -8561,6 +8914,9 @@ spec:
                             type: boolean
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: httpSettings can only be set when serviceType is 'http'
+                      rule: '!has(self.httpSettings) || self.serviceType == ''http'''
                   corsPolicy:
                     description: Specifies the cross-origin policy to apply to the
                       VirtualHost.
@@ -8900,12 +9256,31 @@ spec:
                             Issuer that JWTs are required to have in the "iss" field.
                             If not provided, JWT issuers are not checked.
                           type: string
+                        localJWKS:
+                          description: Local JWKS loads signing keys from a Kubernetes
+                            Secret.
+                          properties:
+                            key:
+                              description: The key of the secret that contains the
+                                JWKS.
+                              minLength: 1
+                              type: string
+                            secretName:
+                              description: The name of the secret that contains the
+                                JWKS.
+                              minLength: 1
+                              type: string
+                          required:
+                          - key
+                          - secretName
+                          type: object
                         name:
                           description: Unique name for the provider.
                           minLength: 1
                           type: string
                         remoteJWKS:
-                          description: Remote JWKS to use for verifying JWT signatures.
+                          description: Remote JWKS fetches signing keys from an HTTP(S)
+                            endpoint.
                           properties:
                             cacheDuration:
                               description: |-
@@ -8986,8 +9361,11 @@ spec:
                           type: object
                       required:
                       - name
-                      - remoteJWKS
                       type: object
+                      x-kubernetes-validations:
+                      - message: exactly one of remoteJWKS or localJWKS must be set
+                        rule: (has(self.remoteJWKS) && !has(self.localJWKS)) || (!has(self.remoteJWKS)
+                          && has(self.localJWKS))
                     type: array
                   rateLimitPolicy:
                     description: The policy for rate limiting on the virtual host.
@@ -9630,7 +10008,6 @@ spec:
                                   The supported values are: "TCP", "UDP", "SCTP"
                                 type: string
                             required:
-                            - error
                             - port
                             - protocol
                             type: object
@@ -9654,10 +10031,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: tlscertificatedelegations.projectcontour.io
 spec:
-  preserveUnknownFields: false
   group: projectcontour.io
   names:
     kind: TLSCertificateDelegation
@@ -10346,7 +10722,7 @@ spec:
         - --log-level info
         command:
         - envoy
-        image: docker.io/envoyproxy/envoy:distroless-v1.35.2
+        image: docker.io/envoyproxy/envoy:distroless-v1.38.2
         imagePullPolicy: IfNotPresent
         name: envoy
         env:
@@ -10370,7 +10746,6 @@ spec:
           name: https
           protocol: TCP
         - containerPort: 8002
-          hostPort: 8002
           name: metrics
           protocol: TCP
         readinessProbe:

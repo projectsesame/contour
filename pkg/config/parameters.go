@@ -178,6 +178,10 @@ type TLSParameters struct {
 	// to be used when establishing TLS connection to upstream
 	// cluster.
 	ClientCertificate NamespacedName `yaml:"envoy-client-certificate,omitempty"`
+
+	// Fingerprint defines TLS fingerprinting configuration.
+	// This only applies to listener TLS (not upstream TLS).
+	Fingerprint *TLSFingerprint `yaml:"fingerprint,omitempty"`
 }
 
 // ProtocolParameters holds configuration details for TLS protocol specifics.
@@ -191,6 +195,17 @@ type ProtocolParameters struct {
 	// by advanced users. Note that these will be ignored when TLS 1.3 is in
 	// use.
 	CipherSuites TLSCiphers `yaml:"cipher-suites,omitempty"`
+}
+
+// TLSFingerprint defines TLS fingerprinting configuration.
+type TLSFingerprint struct {
+	// JA3 enables JA3 fingerprinting in the TLS Inspector.
+	// When true, populates JA3 hash in dynamic metadata.
+	JA3 *bool `yaml:"ja3,omitempty"`
+
+	// JA4 enables JA4 fingerprinting in the TLS Inspector.
+	// When true, populates JA4 hash in dynamic metadata.
+	JA4 *bool `yaml:"ja4,omitempty"`
 }
 
 // Validate TLS fallback certificate, client certificate, and cipher suites
@@ -431,11 +446,11 @@ func (p *ClusterParameters) Validate() error {
 	}
 
 	if p.MaxRequestsPerConnection != nil && *p.MaxRequestsPerConnection < 1 {
-		return fmt.Errorf("invalid max connections per request value %q set on cluster, minimum value is 1", *p.MaxRequestsPerConnection)
+		return fmt.Errorf("invalid max connections per request value %d set on cluster, minimum value is 1", *p.MaxRequestsPerConnection)
 	}
 
 	if p.PerConnectionBufferLimitBytes != nil && *p.PerConnectionBufferLimitBytes < 1 {
-		return fmt.Errorf("invalid per connections buffer limit bytes value %q set on cluster, minimum value is 1", *p.PerConnectionBufferLimitBytes)
+		return fmt.Errorf("invalid per connections buffer limit bytes value %d set on cluster, minimum value is 1", *p.PerConnectionBufferLimitBytes)
 	}
 
 	if err := p.UpstreamTLS.Validate(); err != nil {
@@ -526,23 +541,23 @@ func (p *ListenerParameters) Validate() error {
 	}
 
 	if p.MaxRequestsPerConnection != nil && *p.MaxRequestsPerConnection < 1 {
-		return fmt.Errorf("invalid max connections per request value %q set on listener, minimum value is 1", *p.MaxRequestsPerConnection)
+		return fmt.Errorf("invalid max connections per request value %d set on listener, minimum value is 1", *p.MaxRequestsPerConnection)
 	}
 
 	if p.PerConnectionBufferLimitBytes != nil && *p.PerConnectionBufferLimitBytes < 1 {
-		return fmt.Errorf("invalid per connections buffer limit bytes value %q set on listener, minimum value is 1", *p.PerConnectionBufferLimitBytes)
+		return fmt.Errorf("invalid per connections buffer limit bytes value %d set on listener, minimum value is 1", *p.PerConnectionBufferLimitBytes)
 	}
 
 	if p.MaxRequestsPerIOCycle != nil && *p.MaxRequestsPerIOCycle < 1 {
-		return fmt.Errorf("invalid max connections per IO cycle value %q set on listener, minimum value is 1", *p.MaxRequestsPerIOCycle)
+		return fmt.Errorf("invalid max connections per IO cycle value %d set on listener, minimum value is 1", *p.MaxRequestsPerIOCycle)
 	}
 
 	if p.HTTP2MaxConcurrentStreams != nil && *p.HTTP2MaxConcurrentStreams < 1 {
-		return fmt.Errorf("invalid max HTTP/2 concurrent streams value %q set on listener, minimum value is 1", *p.HTTP2MaxConcurrentStreams)
+		return fmt.Errorf("invalid max HTTP/2 concurrent streams value %d set on listener, minimum value is 1", *p.HTTP2MaxConcurrentStreams)
 	}
 
 	if p.MaxConnectionsPerListener != nil && *p.MaxConnectionsPerListener < 1 {
-		return fmt.Errorf("invalid max connections per listener value %q set on listener, minimum value is 1", *p.MaxConnectionsPerListener)
+		return fmt.Errorf("invalid max connections per listener value %d set on listener, minimum value is 1", *p.MaxConnectionsPerListener)
 	}
 
 	return p.SocketOptions.Validate()
@@ -730,6 +745,14 @@ type Tracing struct {
 	// the default value is 100.
 	OverallSampling *string `yaml:"overallSampling,omitempty"`
 
+	// ClientSampling defines the client sampling rate of trace data.
+	// the default value is 100.
+	ClientSampling *string `yaml:"clientSampling,omitempty"`
+
+	// RandomSampling defines the random sampling rate of trace data.
+	// the default value is 100.
+	RandomSampling *string `yaml:"randomSampling,omitempty"`
+
 	// MaxPathTagLength defines maximum length of the request path
 	// to extract and include in the HttpUrl tag.
 	// the default value is 256.
@@ -764,6 +787,16 @@ type GlobalExternalAuthorization struct {
 	// ExtensionService identifies the extension service defining the RLS,
 	// formatted as <namespace>/<name>.
 	ExtensionService string `yaml:"extensionService,omitempty"`
+	// ServiceType defines the external authorization service API type.
+	// It indicates the protocol implemented by the external server, specifying whether it's a raw HTTP authorization server
+	// or a gRPC authorization server.
+	//
+	// +optional
+	ServiceType contour_v1.AuthorizationServiceType `yaml:"serviceType,omitempty"`
+	// HttpAuthorizationServerSettings defines configurations for interacting with an external HTTP authorization server.
+	//
+	// +optional
+	HTTPServerSettings *contour_v1.HTTPAuthorizationServerSettings `yaml:"httpSettings,omitempty"`
 	// AuthPolicy sets a default authorization policy for client requests.
 	// This policy will be used unless overridden by individual routes.
 	//

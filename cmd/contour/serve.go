@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -454,6 +455,8 @@ func (s *Server) doServe() error {
 		MinimumTLSVersion:             annotation.TLSVersion(contourConfiguration.Envoy.Listener.TLS.MinimumProtocolVersion, "1.2"),
 		MaximumTLSVersion:             annotation.TLSVersion(contourConfiguration.Envoy.Listener.TLS.MaximumProtocolVersion, "1.3"),
 		CipherSuites:                  contourConfiguration.Envoy.Listener.TLS.SanitizedCipherSuites(),
+		EnableJA3Fingerprinting:       contourConfiguration.Envoy.Listener.TLS.GetJA3(),
+		EnableJA4Fingerprinting:       contourConfiguration.Envoy.Listener.TLS.GetJA4(),
 		Timeouts:                      timeouts,
 		DefaultHTTPVersions:           parseDefaultHTTPVersions(contourConfiguration.Envoy.DefaultHTTPVersions),
 		AllowChunkedLength:            !*contourConfiguration.Envoy.Listener.DisableAllowChunkedLength,
@@ -755,6 +758,19 @@ func (s *Server) getExtensionSvcConfig(name, namespace string) (xdscache_v3.Exte
 	return extensionSvcConfig, nil
 }
 
+// parseSamplingRate parses a sampling rate string and returns the float value,
+// defaulting to 100.0 for invalid values or zero values.
+func parseSamplingRate(rateStr *string) float64 {
+	if rateStr == nil {
+		return 100.0
+	}
+	rate, err := strconv.ParseFloat(*rateStr, 64)
+	if err != nil || rate == 0 {
+		return 100.0
+	}
+	return rate
+}
+
 func (s *Server) setupTracingService(tracingConfig *contour_v1alpha1.TracingConfig) (*xdscache_v3.TracingConfig, error) {
 	if tracingConfig == nil {
 		return nil, nil
@@ -786,15 +802,16 @@ func (s *Server) setupTracingService(tracingConfig *contour_v1alpha1.TracingConf
 		})
 	}
 
-	overallSampling, err := strconv.ParseFloat(ptr.Deref(tracingConfig.OverallSampling, "100"), 64)
-	if err != nil || overallSampling == 0 {
-		overallSampling = 100.0
-	}
+	overallSampling := parseSamplingRate(tracingConfig.OverallSampling)
+	clientSampling := parseSamplingRate(tracingConfig.ClientSampling)
+	randomSampling := parseSamplingRate(tracingConfig.RandomSampling)
 
 	return &xdscache_v3.TracingConfig{
 		ServiceName:            ptr.Deref(tracingConfig.ServiceName, "contour"),
 		ExtensionServiceConfig: extensionSvcConfig,
 		OverallSampling:        overallSampling,
+		ClientSampling:         clientSampling,
+		RandomSampling:         randomSampling,
 		MaxPathTagLength:       ptr.Deref(tracingConfig.MaxPathTagLength, 256),
 		CustomTags:             customTags,
 	}, nil
@@ -837,20 +854,23 @@ func (s *Server) setupGlobalExternalAuthentication(contourConfiguration contour_
 		context = contourConfiguration.GlobalExternalAuthorization.AuthPolicy.Context
 	}
 
-	globalExternalAuthConfig := &xdscache_v3.GlobalExternalAuthConfig{
-		ExtensionServiceConfig: extensionSvcConfig,
-		FailOpen:               contourConfiguration.GlobalExternalAuthorization.FailOpen,
-		Context:                context,
+	var validCond contour_v1.DetailedCondition
+	extAuth := dag.NewExternalAuthorization(contourConfiguration.GlobalExternalAuthorization, &validCond)
+	if len(validCond.Errors) > 0 {
+		return nil, fmt.Errorf("%s", validCond.Errors[0].Message)
 	}
 
-	if contourConfiguration.GlobalExternalAuthorization.WithRequestBody != nil {
-		globalExternalAuthConfig.WithRequestBody = &dag.AuthorizationServerBufferSettings{
-			PackAsBytes:         contourConfiguration.GlobalExternalAuthorization.WithRequestBody.PackAsBytes,
-			AllowPartialMessage: contourConfiguration.GlobalExternalAuthorization.WithRequestBody.AllowPartialMessage,
-			MaxRequestBytes:     contourConfiguration.GlobalExternalAuthorization.WithRequestBody.MaxRequestBytes,
-		}
+	// If ContourConfiguration.spec.globalExtAuth.responseTimeout is not set,
+	// fall back to ExtensionService.spec.timeoutPolicy.response.
+	if extAuth.AuthorizationResponseTimeout.UseDefault() {
+		extAuth.AuthorizationResponseTimeout = extensionSvcConfig.Timeout
 	}
-	return globalExternalAuthConfig, nil
+
+	return &xdscache_v3.GlobalExternalAuthConfig{
+		ExtensionServiceConfig: extensionSvcConfig,
+		ExternalAuthorization:  *extAuth,
+		Context:                context,
+	}, nil
 }
 
 func (s *Server) setupGlobalExtProc(contourCfg contour_v1alpha1.ContourConfigurationSpec) (*xdscache_v3.GlobalExtProcConfig, error) {
@@ -1061,9 +1081,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 		if dbc.headersPolicy.RequestHeadersPolicy != nil {
 			if dbc.headersPolicy.RequestHeadersPolicy.Set != nil {
 				requestHeadersPolicy.Set = make(map[string]string)
-				for k, v := range dbc.headersPolicy.RequestHeadersPolicy.Set {
-					requestHeadersPolicy.Set[k] = v
-				}
+				maps.Copy(requestHeadersPolicy.Set, dbc.headersPolicy.RequestHeadersPolicy.Set)
 			}
 			if dbc.headersPolicy.RequestHeadersPolicy.Remove != nil {
 				requestHeadersPolicy.Remove = make([]string, 0, len(dbc.headersPolicy.RequestHeadersPolicy.Remove))
@@ -1074,9 +1092,7 @@ func (s *Server) getDAGBuilder(dbc dagBuilderConfig) *dag.Builder {
 		if dbc.headersPolicy.ResponseHeadersPolicy != nil {
 			if dbc.headersPolicy.ResponseHeadersPolicy.Set != nil {
 				responseHeadersPolicy.Set = make(map[string]string)
-				for k, v := range dbc.headersPolicy.ResponseHeadersPolicy.Set {
-					responseHeadersPolicy.Set[k] = v
-				}
+				maps.Copy(responseHeadersPolicy.Set, dbc.headersPolicy.ResponseHeadersPolicy.Set)
 			}
 			if dbc.headersPolicy.ResponseHeadersPolicy.Remove != nil {
 				responseHeadersPolicy.Remove = make([]string, 0, len(dbc.headersPolicy.ResponseHeadersPolicy.Remove))

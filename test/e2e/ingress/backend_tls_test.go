@@ -17,13 +17,13 @@ package ingress
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 
-	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	certmanagermetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tsaarni/certyaml"
 	core_v1 "k8s.io/api/core/v1"
 	networking_v1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,27 +33,14 @@ import (
 	"github.com/projectcontour/contour/test/e2e"
 )
 
-func testBackendTLS(namespace string) {
+func testBackendTLS(namespace string, ca func() *certyaml.Certificate) {
 	Specify("simple TLS to backends can be configured", func() {
-		// Backend server cert signed by CA.
-		backendServerCert := &certmanagerv1.Certificate{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "backend-server-cert",
-			},
-			Spec: certmanagerv1.CertificateSpec{
-				Usages: []certmanagerv1.KeyUsage{
-					certmanagerv1.UsageServerAuth,
-				},
-				CommonName: "echo-secure",
-				DNSNames:   []string{"echo-secure"},
-				SecretName: "backend-server-cert",
-				IssuerRef: certmanagermetav1.ObjectReference{
-					Name: "ca-issuer",
-				},
-			},
-		}
-		require.NoError(f.T(), f.Client.Create(context.TODO(), backendServerCert))
+		f.Certs.CreateCertificate(namespace, "backend-server-cert", &certyaml.Certificate{
+			Subject:         "cn=echo-secure",
+			SubjectAltNames: []string{"DNS:echo-secure"},
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Issuer:          ca(),
+		})
 		f.Fixtures.EchoSecure.Deploy(namespace, "echo-secure", nil)
 
 		i := &networking_v1.Ingress{

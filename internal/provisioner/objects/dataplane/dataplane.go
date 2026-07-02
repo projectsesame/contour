@@ -16,6 +16,7 @@ package dataplane
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	apps_v1 "k8s.io/api/apps/v1"
@@ -61,7 +62,9 @@ const (
 	xdsResourceVersion = "v3"
 )
 
-// the default resource requirements for container: envoy-initconfig & shutdown-manager, the default value is come from:
+// the default resource requirements for container: envoy-initconfig & shutdown-manager.
+// CPU limit is generous to avoid throttling.
+// See: https://github.com/projectcontour/contour/issues/7366
 // ref: https://projectcontour.io/docs/1.25/deploy-options/#setting-resource-requests-and-limits
 var defContainerResources = core_v1.ResourceRequirements{
 	Requests: core_v1.ResourceList{
@@ -69,7 +72,7 @@ var defContainerResources = core_v1.ResourceRequirements{
 		core_v1.ResourceMemory: resource.MustParse("50Mi"),
 	},
 	Limits: core_v1.ResourceList{
-		core_v1.ResourceCPU:    resource.MustParse("50m"),
+		core_v1.ResourceCPU:    resource.MustParse("200m"),
 		core_v1.ResourceMemory: resource.MustParse("100Mi"),
 	},
 }
@@ -536,31 +539,20 @@ func EnvoyPodSelector(contour *model.Contour) *meta_v1.LabelSelector {
 // envoyPodLabels returns the labels for envoy's pods
 func envoyPodLabels(contour *model.Contour) map[string]string {
 	labels := EnvoyPodSelector(contour).MatchLabels
-	for k, v := range contour.WorkloadLabels() {
-		labels[k] = v
-	}
-	for k, v := range contour.Spec.EnvoyPodLabels {
-		labels[k] = v
-	}
-	for k, v := range contour.AppPredefinedLabels() {
-		labels[k] = v
-	}
-
+	maps.Copy(labels, contour.WorkloadLabels())
+	maps.Copy(labels, contour.Spec.EnvoyPodLabels)
+	maps.Copy(labels, contour.AppPredefinedLabels())
 	return labels
 }
 
 // envoyPodAnnotations returns the annotations for envoy's pods
 func envoyPodAnnotations(contour *model.Contour) map[string]string {
 	annotations := map[string]string{}
-	for k, v := range contour.Spec.EnvoyPodAnnotations {
-		annotations[k] = v
-	}
+	maps.Copy(annotations, contour.Spec.EnvoyPodAnnotations)
 
 	// Annotations specified on the Gateway take precedence
 	// over annotations specified on the GatewayClass/its parameters.
-	for k, v := range contour.CommonAnnotations() {
-		annotations[k] = v
-	}
+	maps.Copy(annotations, contour.CommonAnnotations())
 
 	return annotations
 }
